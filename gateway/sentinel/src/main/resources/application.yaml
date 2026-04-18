@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: velo-sentinel
+  threads:
+    virtual:
+      enabled: true
+
+triton:
+  grpc:
+    host: localhost
+    port: 8001
+
+logging:
+  level:
+    org:
+      springframework:
+        web: DEBUG
+    # Optional: You can also monitor your own code's logic
+    com:
+      velo:
+        sentinel: DEBUG

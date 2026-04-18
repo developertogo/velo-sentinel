@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+
+# macOS
+.DS_Store

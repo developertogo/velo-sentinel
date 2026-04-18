@@ -1,0 +1,7 @@
+[project]
+name = "velo-sentinel"
+version = "0.1.0"
+description = "High-performance Java 25 Virtual Thread-based inference gateway for NVIDIA Triton with SLA-aware request shaping and adaptive batching."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
