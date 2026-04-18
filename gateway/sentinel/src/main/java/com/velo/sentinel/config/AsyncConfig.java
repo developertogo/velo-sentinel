@@ -12,7 +12,7 @@ public class AsyncConfig {
 
   @Bean(name = "applicationTaskExecutor")
   public Executor applicationTaskExecutor() {
-    // Virtual threads for Netflix-style high concurrency
+    // Virtual threads for ultra-high concurrency and scalability
     return Executors.newVirtualThreadPerTaskExecutor();
   }
 }

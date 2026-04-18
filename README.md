@@ -55,3 +55,6 @@ To provide a production-grade, high-concurrency ML model serving gateway that ab
 - [ ] Adaptive batching implementation
 - [ ] SLA-aware priority queuing
 - [ ] OpenTelemetry integration for inference tracing
+
+## Intellectual Property
+This project was designed and implemented by Carlos Hung as a technical demonstration of high-performance system architecture. All architectural decisions, performance optimizations, and code implementations are original work.
