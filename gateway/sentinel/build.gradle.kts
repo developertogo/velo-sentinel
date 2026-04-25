@@ -97,3 +97,16 @@ sourceSets {
 tasks.withType<Test> {
 	useJUnitPlatform()
 }
+
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("--enable-preview")
+}
+
+tasks.withType<Test>().configureEach {
+    jvmArgs("--enable-preview")
+}
+
+// This ensures bootRun works with your preferred command
+tasks.withType<JavaExec>().configureEach {
+    jvmArgs("--enable-preview")
+}
