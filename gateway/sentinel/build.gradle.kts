@@ -21,8 +21,22 @@ repositories {
 }
 
 dependencies {
-	implementation("org.springframework.boot:spring-boot-starter-web")
+  // Use the BOM to manage versions across the board
+  implementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.5"))
+
+  implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
+
+  // Using spring-aspects directly to bypass the 'starter-aop' resolution bug
+  implementation("org.springframework:spring-aspects:7.0.6")
+
+  // Micrometer
+  implementation("io.micrometer:micrometer-core:1.14.0")
+  implementation("io.micrometer:micrometer-registry-prometheus:1.14.0")
+
+  // Resilience & Circuit Breakers
+  implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
+  implementation("io.github.resilience4j:resilience4j-micrometer:2.2.0")
 
   // gRPC runtime
   implementation("io.grpc:grpc-netty-shaded:1.64.0")
@@ -35,13 +49,12 @@ dependencies {
   // Spring Boot 4 / Java 25 compatibility
   compileOnly("jakarta.annotation:jakarta.annotation-api:2.1.1")
 
-	// Required for gRPC 1.64.0 generated code compatibility, emitting legacy annotation
-	implementation("javax.annotation:javax.annotation-api:1.3.2")
+  // Required for gRPC 1.64.0 generated code compatibility, emitting legacy annotation
+  implementation("javax.annotation:javax.annotation-api:1.3.2")
 
   // tests
-	//implementation("org.springframework.boot:spring-boot-starter")
-	testImplementation("org.springframework.boot:spring-boot-starter-test")
-	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  testImplementation("org.springframework.boot:spring-boot-starter-test")
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 configure<com.google.protobuf.gradle.ProtobufExtension> {

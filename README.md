@@ -11,6 +11,11 @@ To provide a production-grade, high-concurrency ML model serving gateway that ab
 - **High-Concurrency Execution**: Leveraging **Java Virtual Threads** (Project Loom) to achieve low-latency and high-throughput request processing, even under heavy distributed loads.
 - **Type-Safe Contract System**: A **protobuf-based gRPC contract system** ensuring strict schema enforcement and automated stub generation for reliable cross-service communication.
 - **Extensible Architecture**: A clean service boundary design that separates the API Gateway, Inference Orchestration, and Model Execution layers.
+- **Fault Tolerance**: Using try-with-resources on StructuredTaskScope to ensure threads are cleaned up even during crashes.
+- **Graceful Degradation**: The ability to provide "Standard" service when "Premium" (Dynamo) service is unavailable.
+- **Observability**: Integrated **Micrometer** for real-time latency tracking (Atlas/Telltale compatible).
+- **Resilience**: Implemented **fail-open circuit breakers** to protect against distributed inference stalls.
+- **Context Propagation**: Utilized **Java 25 Scoped Values** to maintain tracing headers across disaggregated prefill/decode task scopes.
 
 ## Architectural Principles
 Velo Sentinel follows modern high-performance architectural patterns. The system prioritizes **Structured Concurrency** and **Java 25 Virtual Threads** over legacy Reactive patterns, utilizing **Bounded Executors** to ensure service resilience and protect the NVIDIA Dynamo-Triton backend from distributed request spikes.
@@ -18,6 +23,8 @@ Velo Sentinel follows modern high-performance architectural patterns. The system
 ## Technology Stack
 - **Language**: Java 25 (Optimized for Virtual Threads)
 - **Framework**: Spring Boot 4.0.5
+- **Resilience**: Java 25 Structured Concurrency & Scoped Values
+- **Observability**: Micrometer (Registry-based metrics)
 - **Communication**: gRPC (Primary) & HTTP/REST (Legacy/Compatibility)
 - **Inference Backend**: NVIDIA Dynamo-Triton
 - **Serialization**: Protocol Buffers (Protobuf)
@@ -26,20 +33,21 @@ Velo Sentinel follows modern high-performance architectural patterns. The system
 ## Project Structure
 ```text
 .
+├── benchmarks/       # Performance testing and latency metrics
 ├── gateway/          # Java/Spring Boot Gateway Implementation
 │   └── sentinel/     # Gradle project root
-├── infra/            # Infrastructure configuration (Triton, Docker)
-├── benchmarks/       # Performance testing and latency metrics
+├── python/           # Python utilities and model scripts
 ├── triton-client/    # Client utilities and testing scripts
-└── pyproject.toml    # Python project configuration
+├── infra/            # Infrastructure configuration (Triton, Docker)
 ```
 
 ## Getting Started
 
 ### Prerequisites
 - JDK 25
+- Spring Boot 4
 - Docker & Docker Compose
-- Gradle (provided via wrapper)
+- Gradle 8.x (provided via wrapper)
 
 ### Running the Environment
 1. **Start NVIDIA Dynamo-Triton**:
@@ -60,4 +68,4 @@ Velo Sentinel follows modern high-performance architectural patterns. The system
 - [ ] OpenTelemetry integration for inference tracing
 
 ## Intellectual Property
-This project was designed and implemented by Carlos Hung as a technical demonstration of high-performance system architecture. All architectural decisions, performance optimizations, and code implementations are original work.
+This project was designed and implemented by `velo.com` as a technical demonstration of high-performance system architecture. All architectural decisions, performance optimizations, and code implementations are original work.

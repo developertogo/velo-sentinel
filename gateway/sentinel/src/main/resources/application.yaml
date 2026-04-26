@@ -10,6 +10,18 @@ triton:
     host: localhost
     port: 8001
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      dynamoBackend:
+        registerHealthMap: true
+        slidingWindowSize: 10              # Look at the last 10 calls
+        failureRateThreshold: 50           # Open if 50% fail
+        slowCallRateThreshold: 50          # Open if 50% are slow
+        slowCallDurationThreshold: 500ms   # Define "slow" for local simulation
+        waitDurationInOpenState: 10s       # Stay open for 10s before trying again
+        permittedNumberOfCallsInHalfOpenState: 3
+
 logging:
   level:
     org:

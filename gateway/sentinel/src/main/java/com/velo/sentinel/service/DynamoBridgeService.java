@@ -2,6 +2,12 @@ package com.velo.sentinel.service;
 
 import com.velo.sentinel.backend.InferenceBackend;
 import com.velo.sentinel.backend.TritonBackend;
+import com.velo.sentinel.backend.DynamoBackend;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,9 +23,11 @@ import java.util.concurrent.StructuredTaskScope;
 @Service
 @Primary
 public class DynamoBridgeService implements InferenceBackend {
+  private final MeterRegistry meterRegistry;
 
   private static final Logger log = LoggerFactory.getLogger(DynamoBridgeService.class);
   private final TritonBackend tritonBackend;
+  private final DynamoBackend dynamoBackend;
 
   // Define the Routing Strategy for Netflix-grade deployments
   public enum RoutingMode {
@@ -29,17 +37,44 @@ public class DynamoBridgeService implements InferenceBackend {
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
 
-  public DynamoBridgeService(TritonBackend tritonBackend) {
+  public DynamoBridgeService(TritonBackend tritonBackend,
+      DynamoBackend dynamoBackend,
+      MeterRegistry meterRegistry) {
     this.tritonBackend = tritonBackend;
+    this.dynamoBackend = dynamoBackend;
+    this.meterRegistry = meterRegistry;
   }
 
+  // SLO Threshold: 200ms
+  private static final double LATENCY_THRESHOLD_MS = 200.0;
+
   @Override
+  @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
   public float infer(float value) {
-    return switch (routingMode) {
-      case DYNAMO -> routeToDynamo(value);
-      case SHADOW -> routeShadow(value);
-      case TRITON -> routeToTriton(value);
-    };
+    Timer.Sample sample = Timer.start(meterRegistry);
+    try {
+      float result = switch (routingMode) {
+        case DYNAMO -> routeToDynamo(value);
+        case SHADOW -> routeShadow(value);
+        case TRITON -> routeToTriton(value);
+      };
+      sample.stop(meterRegistry.timer("velo.sentinel.inference", "mode", routingMode.name()));
+      return result;
+    } catch (Exception e) {
+      meterRegistry.counter("velo.sentinel.errors", "mode", routingMode.name()).increment();
+      throw e;
+    }
+  }
+
+  /**
+   * The Fail-Open Fallback.
+   * This is triggered if:
+   * 1. DynamoBackend throws an Exception
+   * 2. The Circuit is OPEN (Dynamo is already known to be down)
+   */
+  public float failOpenToTriton(float value, Throwable t) {
+    log.error("DYNAMO-FAILURE: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.", t.getMessage());
+    return tritonBackend.infer(value);
   }
 
   private float routeToTriton(float value) {
@@ -67,12 +102,18 @@ public class DynamoBridgeService implements InferenceBackend {
       var tritonTask = scope.fork(() -> tritonBackend.infer(value));
 
       // Future-proof: Ready for DynamoTask in the next phase
-      // var dynamoTask = scope.fork(() -> dynamoBackend.infer(value));
+      var dynamoTask = scope.fork(() -> dynamoBackend.infer(value));
 
       scope.join(); // Ensure all virtual threads complete
 
       float tritonResult = tritonTask.get();
       log.info("Shadow Success - Triton Reference Result: {}", tritonResult);
+
+      float dynamoResult = dynamoTask.get();
+
+      // Log the drift between the two models
+      float drift = Math.abs(tritonResult - dynamoResult);
+      log.info("SHADOW-COMPARISON: Triton={}, Dynamo={}, Drift={}", tritonResult, dynamoResult, drift);
 
       return tritonResult;
     } catch (Exception e) {
