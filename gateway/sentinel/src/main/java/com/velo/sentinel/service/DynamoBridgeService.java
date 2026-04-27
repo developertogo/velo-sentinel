@@ -7,6 +7,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.concurrent.TimeUnit;
+import com.velo.sentinel.context.InferenceContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,10 +57,9 @@ public class DynamoBridgeService implements InferenceBackend {
    * Used by legacy callers who don't know about sessions.
    */
   @Override
-  @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
   public float infer(float value) {
     String session = determineSession();
-    return ScopedValue.where(SESSION_ID, session)
+    return ScopedValue.where(InferenceContext.SESSION_ID, session)
         .call(() -> executeInference(value));
   }
 
@@ -68,11 +68,10 @@ public class DynamoBridgeService implements InferenceBackend {
    * Explicitly binds the session provided in the InferenceRequest DTO.
    */
   @Override
-  @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
   public float infer(float value, String sessionId) {
     // Ensure we never pass a null into the ScopedValue/Backends
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
-    return ScopedValue.where(SESSION_ID, safeSession)
+    return ScopedValue.where(InferenceContext.SESSION_ID, safeSession)
         .call(() -> executeInference(value));
   }
 
@@ -95,38 +94,35 @@ public class DynamoBridgeService implements InferenceBackend {
   private String determineSession() {
     // If the Controller already bound a session, use it.
     // Otherwise, default to "legacy-path".
-    return SESSION_ID.isBound() ? SESSION_ID.get() : "legacy-path";
+    return InferenceContext.SESSION_ID.isBound() ? InferenceContext.SESSION_ID.get() : "legacy-path";
   }
 
   /**
    * The Fail-Open Fallback.
-   * This is triggered if:
-   * 1. DynamoBackend throws an Exception
-   * 2. The Circuit is OPEN (Dynamo is already known to be down)
+   * This is triggered only when the Dynamo call fails or the circuit is open.
    */
   public float failOpenToTriton(float value, Throwable t) {
-    log.error("DYNAMO-FAILURE [Legacy]: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
+    log.error("DYNAMO-FAILURE: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
         t.getMessage());
     return tritonBackend.infer(value);
   }
 
-  /**
-   * Fallback for the overloaded Controller method: infer(float, String)
-   * This matches the signature the CircuitBreaker is looking for in your logs.
-   */
-  public float failOpenToTriton(float value, String sessionId, Throwable t) {
-    log.error("DYNAMO-FAILURE [Session: {}]: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
-        sessionId, t.getMessage());
-    return tritonBackend.infer(value);
-  }
-
   private float routeToTriton(float value) {
-    System.out.println("SENTINEL-MODE [TRITON]: Executing standard legacy path.");
+    log.info("SENTINEL-MODE [TRITON]: Executing standard legacy path.");
     return tritonBackend.infer(value);
   }
 
   private float routeToDynamo(float value) {
-    System.out.println("SENTINEL-MODE [DYNAMO]: Executing next-gen Dynamo path.");
+    log.info("SENTINEL-MODE [DYNAMO]: Executing next-gen Dynamo path.");
+    return protectedDynamoCall(value);
+  }
+
+  /**
+   * Protected call to Dynamo backend with Circuit Breaker isolation.
+   * This ensures that only Dynamo-specific failures trip the circuit.
+   */
+  @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
+  public float protectedDynamoCall(float value) {
     return dynamoBackend.infer(value);
   }
 
@@ -137,14 +133,14 @@ public class DynamoBridgeService implements InferenceBackend {
    * parallel.
    */
   private float routeShadow(float value) {
-    System.out.println("SENTINEL-MODE [SHADOW]: Performing side-by-side validation...");
+    log.info("SENTINEL-MODE [SHADOW]: Performing side-by-side validation...");
 
     // Use Java 25 StructuredTaskScope with a configuration-based timeout
     try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll(),
         cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) LATENCY_THRESHOLD_MS)))) {
 
       var tritonTask = scope.fork(() -> tritonBackend.infer(value));
-      var dynamoTask = scope.fork(() -> dynamoBackend.infer(value));
+      var dynamoTask = scope.fork(() -> protectedDynamoCall(value));
 
       try {
         scope.join(); // This will now obey the 'allUntil' deadline

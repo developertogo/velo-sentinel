@@ -2,7 +2,7 @@ package com.velo.sentinel.backend;
 
 import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.grpc.ModelInferResponse;
-import com.velo.sentinel.service.DynamoBridgeService;
+import com.velo.sentinel.context.InferenceContext;
 
 import org.springframework.stereotype.Service;
 
@@ -20,17 +20,20 @@ public class TritonBackend implements InferenceBackend {
 
   @Override
   public float infer(float value) {
-    String activeSession = DynamoBridgeService.SESSION_ID.isBound()
-        ? DynamoBridgeService.SESSION_ID.get()
+    String activeSession = InferenceContext.SESSION_ID.isBound()
+        ? InferenceContext.SESSION_ID.get()
         : "legacy-session";
     return infer(value, activeSession);
   }
 
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TritonBackend.class);
+
   @Override
   public float infer(float value, String sessionId) {
-    System.out.println("TritonBackend is used for session: " + sessionId);
+    log.debug("TRITON-EXECUTION [Session: {}]: Forwarding request to legacy backend.", sessionId);
 
     // Call Triton via gRPC
+    // Note: sessionId is propagated to this layer for future batching/routing support
     ModelInferResponse response = tritonClient.infer(value);
 
     // Extract raw bytes
