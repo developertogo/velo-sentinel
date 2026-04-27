@@ -139,23 +139,40 @@ public class DynamoBridgeService implements InferenceBackend {
   private float routeShadow(float value) {
     System.out.println("SENTINEL-MODE [SHADOW]: Performing side-by-side validation...");
 
-    // Use Java 25 StructuredTaskScope for lightweight concurrent execution
-    try (var scope = StructuredTaskScope.open()) {
-      var tritonTask = scope.fork(() -> tritonBackend.infer(value));
+    // Use Java 25 StructuredTaskScope with a configuration-based timeout
+    try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll(),
+        cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) LATENCY_THRESHOLD_MS)))) {
 
-      // Future-proof: Ready for DynamoTask in the next phase
+      var tritonTask = scope.fork(() -> tritonBackend.infer(value));
       var dynamoTask = scope.fork(() -> dynamoBackend.infer(value));
 
-      scope.join(); // Ensure all virtual threads complete
+      try {
+        scope.join(); // This will now obey the 'allUntil' deadline
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error("SHADOW-INTERRUPTED: Execution interrupted.");
+      }
 
-      float tritonResult = tritonTask.get();
-      log.info("Shadow Success - Triton Reference Result: {}", tritonResult);
+      float tritonResult;
+      if (tritonTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
+        tritonResult = tritonTask.get();
+        log.info("Shadow Success - Triton Reference Result: {}", tritonResult);
+      } else {
+        log.error("SHADOW-CRITICAL: Triton (Ground Truth) failed or timed out. Falling back to direct call.");
+        return tritonBackend.infer(value); // One last sync attempt
+      }
 
-      float dynamoResult = dynamoTask.get();
-
-      // Log the drift between the two models
-      float drift = Math.abs(tritonResult - dynamoResult);
-      log.info("SHADOW-COMPARISON: Triton={}, Dynamo={}, Drift={}", tritonResult, dynamoResult, drift);
+      // Only attempt to get Dynamo result if it actually finished successfully within
+      // the deadline
+      if (dynamoTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
+        float dynamoResult = dynamoTask.get();
+        float drift = Math.abs(tritonResult - dynamoResult);
+        log.info("SHADOW-COMPARISON: Triton={}, Dynamo={}, Drift={}", tritonResult, dynamoResult, drift);
+      } else {
+        log.warn("SHADOW-VETO: Dynamo result unavailable or slow (State: {}). Skipping comparison.",
+            dynamoTask.state());
+        meterRegistry.counter("velo.sentinel.shadow.timeout").increment();
+      }
 
       return tritonResult;
     } catch (Exception e) {
