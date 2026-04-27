@@ -29,13 +29,16 @@ public class DynamoBridgeService implements InferenceBackend {
   private final TritonBackend tritonBackend;
   private final DynamoBackend dynamoBackend;
 
+  @Value("${velo.sentinel.routing-mode:TRITON}")
+  private RoutingMode routingMode;
+
+  // SLO Threshold: 200ms
+  private static final double LATENCY_THRESHOLD_MS = 200.0;
+
   // Define the Routing Strategy for Netflix-grade deployments
   public enum RoutingMode {
     TRITON, DYNAMO, SHADOW
   }
-
-  @Value("${velo.sentinel.routing-mode:TRITON}")
-  private RoutingMode routingMode;
 
   public DynamoBridgeService(TritonBackend tritonBackend,
       DynamoBackend dynamoBackend,
@@ -45,12 +48,35 @@ public class DynamoBridgeService implements InferenceBackend {
     this.meterRegistry = meterRegistry;
   }
 
-  // SLO Threshold: 200ms
-  private static final double LATENCY_THRESHOLD_MS = 200.0;
+  // The "Invisible Pipe" for the Session ID
+  public static final ScopedValue<String> SESSION_ID = ScopedValue.newInstance();
 
+  /**
+   * Satisfies the InferenceBackend Interface.
+   * Used by legacy callers who don't know about sessions.
+   */
   @Override
   @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
   public float infer(float value) {
+    String session = determineSession();
+    return ScopedValue.where(SESSION_ID, session)
+        .call(() -> executeInference(value));
+  }
+
+  /**
+   * Overloaded method for the Controller.
+   * Explicitly binds the session provided in the InferenceRequest DTO.
+   */
+  @Override
+  @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
+  public float infer(float value, String sessionId) {
+    // Ensure we never pass a null into the ScopedValue/Backends
+    String safeSession = (sessionId != null) ? sessionId : "anonymous";
+    return ScopedValue.where(SESSION_ID, safeSession)
+        .call(() -> executeInference(value));
+  }
+
+  private float executeInference(float value) {
     Timer.Sample sample = Timer.start(meterRegistry);
     try {
       float result = switch (routingMode) {
@@ -66,6 +92,12 @@ public class DynamoBridgeService implements InferenceBackend {
     }
   }
 
+  private String determineSession() {
+    // If the Controller already bound a session, use it.
+    // Otherwise, default to "legacy-path".
+    return SESSION_ID.isBound() ? SESSION_ID.get() : "legacy-path";
+  }
+
   /**
    * The Fail-Open Fallback.
    * This is triggered if:
@@ -73,7 +105,18 @@ public class DynamoBridgeService implements InferenceBackend {
    * 2. The Circuit is OPEN (Dynamo is already known to be down)
    */
   public float failOpenToTriton(float value, Throwable t) {
-    log.error("DYNAMO-FAILURE: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.", t.getMessage());
+    log.error("DYNAMO-FAILURE [Legacy]: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
+        t.getMessage());
+    return tritonBackend.infer(value);
+  }
+
+  /**
+   * Fallback for the overloaded Controller method: infer(float, String)
+   * This matches the signature the CircuitBreaker is looking for in your logs.
+   */
+  public float failOpenToTriton(float value, String sessionId, Throwable t) {
+    log.error("DYNAMO-FAILURE [Session: {}]: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
+        sessionId, t.getMessage());
     return tritonBackend.infer(value);
   }
 
@@ -84,8 +127,7 @@ public class DynamoBridgeService implements InferenceBackend {
 
   private float routeToDynamo(float value) {
     System.out.println("SENTINEL-MODE [DYNAMO]: Executing next-gen Dynamo path.");
-    // We will integrate DynamoBackend here in the next step
-    return tritonBackend.infer(value);
+    return dynamoBackend.infer(value);
   }
 
   /**

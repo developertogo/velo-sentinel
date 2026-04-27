@@ -1,8 +1,11 @@
 package com.velo.sentinel.controller;
 
 import com.velo.sentinel.backend.InferenceBackend;
+import com.velo.sentinel.model.InferenceRequest;
+
 import java.util.Map;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,15 +18,14 @@ public class InferenceController {
   }
 
   @PostMapping("/infer")
-  public Map<String, Object> infer(@RequestBody Map<String, Float> body) {
-    float value = body.getOrDefault("value", 0.0f);
+  public ResponseEntity<Map<String, Object>> infer(@RequestBody InferenceRequest request) {
+    // 1. Capture the 'what' (value) and 'who' (sessionId) from the DTO
+    // 2. Pass them to the bridge
+    float prediction = backend.infer(request.value(), request.sessionId());
 
-    float result = backend.infer(value);
-
-    return Map.of(
-        "model", "simple",
-        "input_value", value,
-        "prediction", result,
-        "status", "SUCCESS");
+    return ResponseEntity.ok(Map.of(
+        "status", "SUCCESS",
+        "prediction", prediction,
+        "sessionId", request.sessionId() != null ? request.sessionId() : "anonymous"));
   }
 }

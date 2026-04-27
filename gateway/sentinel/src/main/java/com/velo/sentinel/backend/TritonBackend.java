@@ -2,6 +2,7 @@ package com.velo.sentinel.backend;
 
 import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.grpc.ModelInferResponse;
+import com.velo.sentinel.service.DynamoBridgeService;
 
 import org.springframework.stereotype.Service;
 
@@ -19,7 +20,15 @@ public class TritonBackend implements InferenceBackend {
 
   @Override
   public float infer(float value) {
-    System.out.println("TritonBackend is used");
+    String activeSession = DynamoBridgeService.SESSION_ID.isBound()
+        ? DynamoBridgeService.SESSION_ID.get()
+        : "legacy-session";
+    return infer(value, activeSession);
+  }
+
+  @Override
+  public float infer(float value, String sessionId) {
+    System.out.println("TritonBackend is used for session: " + sessionId);
 
     // Call Triton via gRPC
     ModelInferResponse response = tritonClient.infer(value);
