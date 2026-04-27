@@ -21,8 +21,6 @@ repositories {
 }
 
 dependencies {
-  // Use the BOM to manage versions across the board
-  implementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.5"))
 
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -54,6 +52,8 @@ dependencies {
 
   // tests
   testImplementation("org.springframework.boot:spring-boot-starter-test")
+  testImplementation("org.springframework.boot:spring-boot-test-autoconfigure:4.0.5")
+  testImplementation("com.fasterxml.jackson.core:jackson-databind")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
