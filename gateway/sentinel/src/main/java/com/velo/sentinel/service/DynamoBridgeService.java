@@ -4,9 +4,9 @@ import com.velo.sentinel.backend.InferenceBackend;
 import com.velo.sentinel.backend.TritonBackend;
 import com.velo.sentinel.backend.DynamoBackend;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import java.util.concurrent.TimeUnit;
 import com.velo.sentinel.context.InferenceContext;
 
 import org.slf4j.Logger;
@@ -16,6 +16,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.StructuredTaskScope;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * DynamoBridgeService: The L5 Migration Controller.
@@ -33,8 +35,8 @@ public class DynamoBridgeService implements InferenceBackend {
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
 
-  // SLO Threshold: 200ms
-  private static final double LATENCY_THRESHOLD_MS = 200.0;
+  @Value("${velo.sentinel.latency-threshold-ms:200.0}")
+  private double latencyThresholdMs;
 
   // Define the Routing Strategy for Netflix-grade deployments
   public enum RoutingMode {
@@ -137,7 +139,7 @@ public class DynamoBridgeService implements InferenceBackend {
 
     // Use Java 25 StructuredTaskScope with a configuration-based timeout
     try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll(),
-        cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) LATENCY_THRESHOLD_MS)))) {
+        cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) latencyThresholdMs)))) {
 
       var tritonTask = scope.fork(() -> tritonBackend.infer(value));
       var dynamoTask = scope.fork(() -> protectedDynamoCall(value));
@@ -163,7 +165,18 @@ public class DynamoBridgeService implements InferenceBackend {
       if (dynamoTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
         float dynamoResult = dynamoTask.get();
         float drift = Math.abs(tritonResult - dynamoResult);
+        
+        // Log the result for human debugging
         log.info("SHADOW-COMPARISON: Triton={}, Dynamo={}, Drift={}", tritonResult, dynamoResult, drift);
+        
+        // Record the drift in Micrometer for Prometheus monitoring
+        DistributionSummary.builder("velo.sentinel.shadow.drift")
+            .description("Absolute difference between Triton and Dynamo results")
+            .tag("session", InferenceContext.SESSION_ID.isBound() ? "active" : "anonymous")
+            .register(meterRegistry)
+            .record(drift);
+
+        meterRegistry.counter("velo.sentinel.shadow.comparisons").increment();
       } else {
         log.warn("SHADOW-VETO: Dynamo result unavailable or slow (State: {}). Skipping comparison.",
             dynamoTask.state());

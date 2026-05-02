@@ -5,10 +5,21 @@ spring:
     virtual:
       enabled: true
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+
 triton:
   grpc:
     host: localhost
     port: 8001
+
+dynamo:
+  grpc:
+    host: localhost
+    port: 9001
 
 resilience4j:
   circuitbreaker:
