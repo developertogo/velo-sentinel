@@ -21,7 +21,16 @@ import java.time.Instant;
 
 /**
  * DynamoBridgeService: The L5 Migration Controller.
- * Manages the transition from legacy Triton to next-gen Dynamo-Triton.
+ * 
+ * This service acts as the central orchestrator for the Velo-Sentinel gateway.
+ * It manages the transition from legacy Triton backends to next-gen disaggregated 
+ * Dynamo architectures using a three-tier routing strategy (TRITON, DYNAMO, SHADOW).
+ * 
+ * Key Responsibilities:
+ * 1. Orchestrates concurrent execution in SHADOW mode using Java 25 Structured Concurrency.
+ * 2. Implements Fail-Open resilience via Resilience4j Circuit Breakers.
+ * 3. Tracks quantitative model drift using Micrometer DistributionSummaries.
+ * 4. Manages session context propagation using ScopedValues.
  */
 @Service
 @Primary
@@ -32,13 +41,23 @@ public class DynamoBridgeService implements InferenceBackend {
   private final TritonBackend tritonBackend;
   private final DynamoBackend dynamoBackend;
 
+  /**
+   * Defines the active routing strategy.
+   * TRITON: Legacy path only.
+   * DYNAMO: Next-gen path with legacy fallback.
+   * SHADOW: Concurrent execution with side-by-side drift validation.
+   */
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
 
+  /**
+   * The Maximum Latency Threshold for shadow validation (SLO).
+   * If Dynamo exceeds this threshold, the shadow result is vetoed to protect 
+   * production response times.
+   */
   @Value("${velo.sentinel.latency-threshold-ms:200.0}")
   private double latencyThresholdMs;
 
-  // Define the Routing Strategy for Netflix-grade deployments
   public enum RoutingMode {
     TRITON, DYNAMO, SHADOW
   }
@@ -51,12 +70,9 @@ public class DynamoBridgeService implements InferenceBackend {
     this.meterRegistry = meterRegistry;
   }
 
-  // The "Invisible Pipe" for the Session ID
-  public static final ScopedValue<String> SESSION_ID = ScopedValue.newInstance();
-
   /**
-   * Satisfies the InferenceBackend Interface.
-   * Used by legacy callers who don't know about sessions.
+   * Standard inference entry point.
+   * Binds a default or recovered session context before executing the routing logic.
    */
   @Override
   public float infer(float value) {
@@ -66,17 +82,24 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   /**
-   * Overloaded method for the Controller.
-   * Explicitly binds the session provided in the InferenceRequest DTO.
+   * Session-aware inference entry point.
+   * Explicitly binds the provided sessionId for the duration of the inference call.
+   * 
+   * @param value The input feature value for inference.
+   * @param sessionId The unique identifier for the user session (used for KV-Cache routing).
+   * @return The resulting prediction from the active backend.
    */
   @Override
   public float infer(float value, String sessionId) {
-    // Ensure we never pass a null into the ScopedValue/Backends
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     return ScopedValue.where(InferenceContext.SESSION_ID, safeSession)
         .call(() -> executeInference(value));
   }
 
+  /**
+   * Internal execution engine. Tracks latency and routes to the appropriate 
+   * backend based on the configured RoutingMode.
+   */
   private float executeInference(float value) {
     Timer.Sample sample = Timer.start(meterRegistry);
     try {
@@ -94,14 +117,13 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   private String determineSession() {
-    // If the Controller already bound a session, use it.
-    // Otherwise, default to "legacy-path".
     return InferenceContext.SESSION_ID.isBound() ? InferenceContext.SESSION_ID.get() : "legacy-path";
   }
 
   /**
-   * The Fail-Open Fallback.
-   * This is triggered only when the Dynamo call fails or the circuit is open.
+   * Resilience4j Fallback Handler.
+   * Ensures 100% availability by failing open to the legacy Triton backend 
+   * if the Dynamo path encounters errors or trips the circuit breaker.
    */
   public float failOpenToTriton(float value, Throwable t) {
     log.error("DYNAMO-FAILURE: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
@@ -120,8 +142,8 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   /**
-   * Protected call to Dynamo backend with Circuit Breaker isolation.
-   * This ensures that only Dynamo-specific failures trip the circuit.
+   * Isolated Dynamo call protected by a dedicated Circuit Breaker.
+   * Separates Dynamo failures from Triton's health metrics.
    */
   @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
   public float protectedDynamoCall(float value) {
@@ -129,15 +151,18 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   /**
-   * SHADOW MODE: Executes both backends concurrently using Structured
-   * Concurrency.
-   * Returns the 'Ground Truth' (Triton) while validating Dynamo's results in
-   * parallel.
+   * SHADOW MODE: Orchestrates concurrent execution of both backends.
+   * 
+   * Uses Java 25 StructuredTaskScope to fork both requests. 
+   * The 'Ground Truth' (Triton) is returned to the caller, while the 
+   * Dynamo result is validated in the background.
+   * 
+   * Drift between models is recorded as a Micrometer DistributionSummary 
+   * for real-time observability.
    */
   private float routeShadow(float value) {
     log.info("SENTINEL-MODE [SHADOW]: Performing side-by-side validation...");
 
-    // Use Java 25 StructuredTaskScope with a configuration-based timeout
     try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll(),
         cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) latencyThresholdMs)))) {
 
@@ -145,7 +170,7 @@ public class DynamoBridgeService implements InferenceBackend {
       var dynamoTask = scope.fork(() -> protectedDynamoCall(value));
 
       try {
-        scope.join(); // This will now obey the 'allUntil' deadline
+        scope.join(); 
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         log.error("SHADOW-INTERRUPTED: Execution interrupted.");
@@ -154,22 +179,18 @@ public class DynamoBridgeService implements InferenceBackend {
       float tritonResult;
       if (tritonTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
         tritonResult = tritonTask.get();
-        log.info("Shadow Success - Triton Reference Result: {}", tritonResult);
       } else {
         log.error("SHADOW-CRITICAL: Triton (Ground Truth) failed or timed out. Falling back to direct call.");
-        return tritonBackend.infer(value); // One last sync attempt
+        return tritonBackend.infer(value);
       }
 
-      // Only attempt to get Dynamo result if it actually finished successfully within
-      // the deadline
+      // Quantatitive Drift Detection
       if (dynamoTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
         float dynamoResult = dynamoTask.get();
         float drift = Math.abs(tritonResult - dynamoResult);
         
-        // Log the result for human debugging
         log.info("SHADOW-COMPARISON: Triton={}, Dynamo={}, Drift={}", tritonResult, dynamoResult, drift);
         
-        // Record the drift in Micrometer for Prometheus monitoring
         DistributionSummary.builder("velo.sentinel.shadow.drift")
             .description("Absolute difference between Triton and Dynamo results")
             .tag("session", InferenceContext.SESSION_ID.isBound() ? "active" : "anonymous")
