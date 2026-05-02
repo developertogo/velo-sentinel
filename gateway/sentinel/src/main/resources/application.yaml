@@ -15,6 +15,7 @@ triton:
   grpc:
     host: localhost
     port: 8001
+    model-name: simple
 
 dynamo:
   grpc:
