@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.velo.sentinel.service.DynamoBridgeService;
+import com.velo.sentinel.context.InferenceContext;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,25 +26,32 @@ public class DynamoBackend implements InferenceBackend {
    */
   @Override
   public float infer(float value) {
-    String activeSession = DynamoBridgeService.SESSION_ID.isBound()
-        ? DynamoBridgeService.SESSION_ID.get()
+    String activeSession = InferenceContext.SESSION_ID.isBound()
+        ? InferenceContext.SESSION_ID.get()
         : "default-session";
     return infer(value, activeSession);
   }
 
+  private final com.velo.sentinel.client.DynamoGrpcClient dynamoGrpcClient;
+
+  public DynamoBackend(com.velo.sentinel.client.DynamoGrpcClient dynamoGrpcClient) {
+    this.dynamoGrpcClient = dynamoGrpcClient;
+  }
+
   @Override
   public float infer(float value, String sessionId) {
-    log.info("DYNAMO-EXECUTION: Processing task for Session: {} | Value: {}", sessionId, value);
+    log.info("DYNAMO-EXECUTION [Session: {}]: Forwarding to next-gen gRPC service.", sessionId);
 
-    if (warmSessions.contains(sessionId)) {
-      log.info("DYNAMO-EXECUTION [CACHE-HIT]: Session {} found. Fast Decode Path.", sessionId);
-      simulateLatency(10);
-    } else {
-      log.info("DYNAMO-EXECUTION [CACHE-MISS]: Session {} new. Prefill & Cache store.", sessionId);
+    // Track "Warm vs Cold" state for simulation metrics
+    if (!warmSessions.contains(sessionId)) {
+      log.warn("DYNAMO-REGISTRY: Session {} is COLD. Initializing KV-Cache...", sessionId);
       warmSessions.add(sessionId);
-      simulateLatency(50);
+    } else {
+      log.info("DYNAMO-REGISTRY: Session {} is WARM. Leveraging local KV-Cache.", sessionId);
     }
-    return value + 0.5f;
+
+    // Replace simulation with real gRPC call
+    return dynamoGrpcClient.callDynamo(value, sessionId);
   }
 
   private void simulateLatency(int ms) {
