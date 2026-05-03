@@ -7,6 +7,7 @@ import com.velo.sentinel.client.DynamoGrpcClient;
 import com.velo.sentinel.grpc.ModelInferResponse;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.DynamoResilienceComponent;
+import com.velo.sentinel.service.KVCacheRegistry;
 import com.google.protobuf.ByteString;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -33,6 +34,7 @@ public class SentinelInferenceTests {
     private DynamoBackend dynamoBackend;
     private DynamoBridgeService bridgeService;
     private DynamoResilienceComponent resilienceComponent;
+    private KVCacheRegistry cacheRegistry;
     private TritonGrpcClient tritonClient;
     private DynamoGrpcClient dynamoGrpcClient;
     private MeterRegistry meterRegistry;
@@ -44,6 +46,7 @@ public class SentinelInferenceTests {
         dynamoGrpcClient = mock(DynamoGrpcClient.class);
         meterRegistry = new SimpleMeterRegistry();
         tracer = mock(Tracer.class);
+        cacheRegistry = mock(KVCacheRegistry.class);
 
         // Mock Tracer to avoid NPEs
         SpanBuilder mockSpanBuilder = mock(SpanBuilder.class);
@@ -53,7 +56,7 @@ public class SentinelInferenceTests {
         when(mockSpanBuilder.startSpan()).thenReturn(mockSpan);
         
         tritonBackend = new TritonBackend(tritonClient);
-        dynamoBackend = new DynamoBackend(dynamoGrpcClient);
+        dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
         bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, tracer);

@@ -1,13 +1,11 @@
 package com.velo.sentinel.backend;
 
+import com.velo.sentinel.client.DynamoGrpcClient;
+import com.velo.sentinel.service.KVCacheRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
 import com.velo.sentinel.context.InferenceContext;
-
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * DynamoBackend: The Next-Gen Disaggregated Inference Engine.
@@ -17,31 +15,20 @@ import java.util.concurrent.ConcurrentHashMap;
  * and reduce compute redundancy.
  * 
  * Key Features:
- * 1. Session-Aware Registry: Tracks "Warm" vs "Cold" sessions to simulate KV-Cache affinity.
+ * 1. Session-Aware Registry: Tracks "Warm" vs "Cold" sessions via KVCacheRegistry.
  * 2. High-Performance gRPC: Offloads heavy computation to specialized remote services.
- * 3. Thread-Safe State: Uses ConcurrentHashMaps to manage session state safely across Virtual Threads.
  */
 @Service
 public class DynamoBackend implements InferenceBackend {
   private static final Logger log = LoggerFactory.getLogger(DynamoBackend.class);
+  private final DynamoGrpcClient dynamoClient;
+  private final KVCacheRegistry cacheRegistry;
 
-  /**
-   * Acts as our disaggregated "Cache Registry". 
-   * Tracks sessions that have already initialized their remote state.
-   */
-  private final Set<String> warmSessions = ConcurrentHashMap.newKeySet();
-
-  private final com.velo.sentinel.client.DynamoGrpcClient dynamoGrpcClient;
-
-  public DynamoBackend(com.velo.sentinel.client.DynamoGrpcClient dynamoGrpcClient) {
-    this.dynamoGrpcClient = dynamoGrpcClient;
+  public DynamoBackend(DynamoGrpcClient dynamoClient, KVCacheRegistry cacheRegistry) {
+    this.dynamoClient = dynamoClient;
+    this.cacheRegistry = cacheRegistry;
   }
 
-  /**
-   * Overloaded method to support the legacy interface while transitioning 
-   * to the Session-Aware model. Automatically recovers the sessionId from 
-   * the active ScopedValue context.
-   */
   @Override
   public float infer(float value) {
     String activeSession = InferenceContext.SESSION_ID.isBound()
@@ -59,25 +46,18 @@ public class DynamoBackend implements InferenceBackend {
    * Executes a session-aware inference call for a specific model.
    * Manages the "Warm-up" lifecycle for disaggregated caching before 
    * delegating the actual computation to the gRPC client.
-   * 
-   * @param value The input feature value.
-   * @param sessionId The unique session identifier used for cache routing.
-   * @param modelName Target model for inference.
-   * @return The prediction result from the Dynamo service.
    */
   @Override
   public float infer(float value, String sessionId, String modelName) {
     log.info("DYNAMO-EXECUTION [Session: {}, Model: {}]: Forwarding to next-gen service.", sessionId, modelName);
 
-    // Lifecycle Management: Track "Warm vs Cold" state for simulation observability
-    if (!warmSessions.contains(sessionId)) {
-      log.warn("DYNAMO-REGISTRY: Session {} is COLD. Initializing disaggregated KV-Cache...", sessionId);
-      warmSessions.add(sessionId);
+    if (cacheRegistry.isSessionWarm(sessionId)) {
+        log.info("DYNAMO-REGISTRY: Session {} is WARM. Leveraging local KV-Cache.", sessionId);
     } else {
-      log.info("DYNAMO-REGISTRY: Session {} is WARM. Leveraging established cache state.", sessionId);
+        log.warn("DYNAMO-REGISTRY: Session {} is COLD. Initializing disaggregated KV-Cache...", sessionId);
+        cacheRegistry.markSessionActive(sessionId);
     }
 
-    // Delegate to the hardened gRPC client
-    return dynamoGrpcClient.callDynamo(value, sessionId, modelName);
+    return dynamoClient.callDynamo(value, sessionId, modelName);
   }
 }
