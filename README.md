@@ -1,4 +1,4 @@
-# Velo Sentinel
+# Velo-Sentinel
 
 > High-performance Java 25 Virtual Thread-based inference gateway serving as the critical bridge for transitioning from legacy NVIDIA Triton to the **NVIDIA Dynamo 1.0** disaggregated inference framework.
 
@@ -14,11 +14,41 @@ To provide a production-grade, high-concurrency ML model serving gateway that ab
 - **Fault Tolerance**: Using try-with-resources on StructuredTaskScope to ensure threads are cleaned up even during crashes.
 - **Graceful Degradation**: The ability to provide "Standard" service when "Premium" (Dynamo) service is unavailable.
 - **Observability**: Integrated **Micrometer** for real-time latency tracking (Atlas/Telltale compatible).
-- **Resilience**: Implemented **fail-open circuit breakers** to protect against distributed inference stalls.
+- **Resilience**: Implemented **fail-open circuit breakers** via `DynamoResilienceComponent` to protect against distributed inference stalls.
 - **Context Propagation**: Utilized **Java 25 Scoped Values** to maintain tracing headers across disaggregated prefill/decode task scopes.
 
-## Architectural Principles
-Velo Sentinel follows modern high-performance architectural patterns. The system prioritizes **Structured Concurrency** and **Java 25 Virtual Threads** over legacy Reactive patterns, utilizing **Bounded Executors** to ensure service resilience and protect the NVIDIA Dynamo-Triton backend from distributed request spikes.
+## Architecture
+Velo-Sentinel follows modern high-performance architectural patterns, prioritizing **Structured Concurrency** over legacy Reactive patterns.
+
+### Architecture Diagram
+```mermaid
+graph TD
+    User([User Request]) --> Controller[InferenceController]
+    Controller --> Bridge[DynamoBridgeService]
+    
+    subgraph "Orchestration Layer (Virtual Threads)"
+        Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
+        TaskScope -->|Primary| Dynamo[DynamoBackend]
+        TaskScope -->|Shadow| Triton[TritonBackend]
+        
+        Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
+        RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
+        RC -.->|Fallback| Triton
+    end
+    
+    Triton --> T_GRPC[Triton gRPC Client]
+    
+    D_GRPC --> DB[(Dynamo Backend)]
+    T_GRPC --> TB[(Legacy Triton Backend)]
+    
+    Bridge --> Metrics[Micrometer Metrics]
+    Metrics --> Prometheus[Prometheus / Grafana]
+```
+
+### Resilience Features
+- **DynamoResilienceComponent**: Isolated resilience layer using Resilience4j `@CircuitBreaker`. Decouples fault tolerance from orchestration logic.
+- **Fail-Open Path**: Automatic fallback to legacy Triton ensures 100% availability during migration.
+- **AOP-Aware Proxying**: Fixed internal proxying issues via component isolation.
 
 ## Technology Stack
 - **Language**: Java 25 (Optimized for Virtual Threads)
@@ -60,6 +90,34 @@ Velo Sentinel follows modern high-performance architectural patterns. The system
    cd gateway/sentinel
    ./gradlew bootRun
    ```
+
+## Resilience & Chaos Simulation
+Velo-Sentinel is hardened with a dedicated `DynamoResilienceComponent` to handle fault tolerance.
+
+### Running Chaos Simulation
+1. Start the gateway in DYNAMO mode:
+   ```bash
+   ./gradlew bootRun --args='--spring.profiles.active=dev --velo.sentinel.routing-mode=DYNAMO'
+   ```
+2. Trigger Fail-Open (Simulate Dynamo Backend Crash):
+   Use a session ID starting with `chaos-fail` to trigger a hard error in the Mock server.
+   ```bash
+   curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" -d '{"sessionId": "chaos-fail-01", "value": 10}'
+   ```
+   *Expected Result*: Status `SUCCESS`, prediction `10.0` (Fallback to Triton).
+
+3. Trigger SLO Veto (Simulate High Latency):
+   Use a session ID starting with `chaos-slow` in SHADOW mode.
+   ```bash
+   ./gradlew bootRun --args='--spring.profiles.active=dev --velo.sentinel.routing-mode=SHADOW'
+   curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" -d '{"sessionId": "chaos-slow-01", "value": 10}'
+   ```
+   *Expected Result*: Status `SUCCESS`, prediction `10.0` (Triton Ground Truth). Check logs for `SHADOW-VETO`.
+
+### Metrics & Observability
+- **Drift**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.drift`
+- **SLO Vetoes**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.timeout`
+- **Error Rates**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.errors`
 
 ## Future Roadmap
 - [ ] Multi-model dynamic routing

@@ -45,21 +45,19 @@ public class MockDynamoServer {
     static class DynamoServiceImpl extends DynamoServiceGrpc.DynamoServiceImplBase {
         @Override
         public void infer(DynamoInferenceRequest request, StreamObserver<DynamoInferenceResponse> responseObserver) {
-            // Simulate the disaggregated inference logic
-            // Dynamo returns input + 0.5f to demonstrate "drift" against Triton
+            // Simulate normal network latency (25ms)
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
             float prediction = request.getInputValue() + 0.5f;
             
             DynamoInferenceResponse response = DynamoInferenceResponse.newBuilder()
                 .setPrediction(prediction)
                 .setStatus("SUCCESS")
                 .build();
-
-            // Simulate network latency (25ms)
-            try {
-                Thread.sleep(25);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
 
             responseObserver.onNext(response);
             responseObserver.onCompleted();

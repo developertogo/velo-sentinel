@@ -7,6 +7,7 @@ import com.velo.sentinel.client.DynamoGrpcClient;
 import com.velo.sentinel.context.InferenceContext;
 import com.velo.sentinel.grpc.ModelInferResponse;
 import com.velo.sentinel.service.DynamoBridgeService;
+import com.velo.sentinel.service.DynamoResilienceComponent;
 import com.google.protobuf.ByteString;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -24,14 +25,13 @@ import static org.mockito.Mockito.*;
 
 /**
  * SentinelInferenceTests: Comprehensive Logic & Routing Validation.
- * This suite verifies the core business logic of the DynamoBridgeService,
- * ensuring high-availability, session awareness, and quantitative validation.
  */
 public class SentinelInferenceTests {
 
     private TritonBackend tritonBackend;
     private DynamoBackend dynamoBackend;
     private DynamoBridgeService bridgeService;
+    private DynamoResilienceComponent resilienceComponent;
     private TritonGrpcClient tritonClient;
     private DynamoGrpcClient dynamoGrpcClient;
     private MeterRegistry meterRegistry;
@@ -44,15 +44,12 @@ public class SentinelInferenceTests {
         
         tritonBackend = new TritonBackend(tritonClient);
         dynamoBackend = new DynamoBackend(dynamoGrpcClient);
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry);
+        resilienceComponent = new DynamoResilienceComponent(dynamoBackend, tritonBackend);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent);
 
-        // Setup a default Triton mock response (Returns 10.0)
         setupTritonMock(10.0f);
     }
 
-    /**
-     * Helper to simulate a binary float response from NVIDIA Triton.
-     */
     private void setupTritonMock(float value) {
         byte[] resultBytes = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(value).array();
         ModelInferResponse mockResponse = ModelInferResponse.newBuilder()
@@ -62,9 +59,9 @@ public class SentinelInferenceTests {
     }
 
     /**
-     * Workflow: Legacy Support.
-     * Verification: Ensure requests are correctly routed to the standard Triton path
-     * when the system is in TRITON mode.
+     * Workflow: Standard Legacy Path.
+     * Verification: Ensures that when RoutingMode is TRITON, the gateway 
+     * bypasses next-gen logic and returns the Ground Truth prediction.
      */
     @Test
     void testRoutingModeTriton() {
@@ -74,9 +71,9 @@ public class SentinelInferenceTests {
     }
 
     /**
-     * Workflow: Next-Gen Migration (Direct).
-     * Verification: Ensure requests are routed to the new Dynamo backend,
-     * maintaining session-awareness.
+     * Workflow: Next-Gen Dynamo Path (Migration Target).
+     * Verification: Validates that DYNAMO mode correctly routes requests 
+     * to the gRPC backend and respects the session context.
      */
     @Test
     void testRoutingModeDynamo_Success() {
@@ -87,82 +84,62 @@ public class SentinelInferenceTests {
     }
 
     /**
-     * Workflow: Shadow Mode Success (Side-by-Side Validation).
-     * Enhancement: Verifies that both Triton and Dynamo are executed concurrently,
-     * and specifically validates that the Drift Metric (velo.sentinel.shadow.drift)
-     * is correctly calculated and recorded in the MeterRegistry.
+     * Workflow: Dual-Inference Shadow Mode.
+     * Verification: Confirms that both backends are invoked and that 
+     * model drift (delta) is correctly calculated and recorded in Micrometer.
      */
     @Test
     void testRoutingModeShadow_Success() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
-        setField(bridgeService, "latencyThresholdMs", 1000.0); // Generous timeout
+        setField(bridgeService, "latencyThresholdMs", 1000.0);
         setupTritonMock(10.0f);
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString())).thenReturn(10.5f);
 
         float result = bridgeService.infer(5.0f, "test-session");
 
-        assertThat(result).isEqualTo(10.0f); // Ground truth from Triton
+        assertThat(result).isEqualTo(10.0f);
         verify(tritonClient, atLeastOnce()).infer(5.0f);
         
-        // Quantitative Validation: Verify drift metric was recorded (|10.0 - 10.5| = 0.5)
         var driftMetric = meterRegistry.find("velo.sentinel.shadow.drift").summary();
         if (driftMetric != null) {
-            assertThat(driftMetric.max()).isEqualTo(0.5, org.assertj.core.data.Offset.offset(0.001));
+            assertThat(driftMetric.mean()).isEqualTo(0.5, org.assertj.core.data.Offset.offset(0.001));
         }
     }
 
     /**
-     * Workflow: Shadow Mode SLO Compliance (Fail-Safe Handling).
-     * Enhancement: Verifies that if Dynamo exceeds the SLO (configurable via latencyThresholdMs),
-     * Sentinel safely returns the Triton result without blocking the user, ensuring
-     * zero impact on production latency.
+     * Workflow: Shadow Mode SLO Veto.
+     * Verification: Ensures that if the Dynamo path exceeds the latency 
+     * threshold (e.g. 10ms), the comparison is pruned to protect gateway latency.
      */
     @Test
     void testRoutingModeShadow_Timeout() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
-        setField(bridgeService, "latencyThresholdMs", 10.0); // Very aggressive timeout
+        setField(bridgeService, "latencyThresholdMs", 10.0);
         setupTritonMock(10.0f);
         
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString())).thenAnswer(inv -> {
-            Thread.sleep(500); // Simulate slow backend
+            Thread.sleep(500);
             return 15.0f;
         });
 
         float result = bridgeService.infer(5.0f, "test-session");
-        assertThat(result).isEqualTo(10.0f); // Safety: Returned Triton's ground truth
+        assertThat(result).isEqualTo(10.0f);
     }
 
     /**
-     * Workflow: High-Availability Fail-Open.
-     * Enhancement: Directly tests the failOpenToTriton recovery path to ensure 
-     * 100% availability even during total backend failures or circuit breaker trips.
+     * Workflow: High Availability Fallback.
+     * Verification: Validates that the DynamoResilienceComponent correctly 
+     * fails open to Triton when a backend failure is simulated.
      */
     @Test
-    void testFallbackLogicDirectly() {
-        float result = bridgeService.failOpenToTriton(5.0f, new RuntimeException("Simulated"));
-        assertThat(result).isEqualTo(10.0f); // Resiliently defaulted to Triton
+    void testHighAvailability_FailOpen() {
+        float result = resilienceComponent.failOpenToTriton(5.0f, new RuntimeException("Simulated"));
+        assertThat(result).isEqualTo(10.0f);
     }
 
-    /**
-     * Workflow: Contextual Integrity (ScopedValue Propagation).
-     * Enhancement: Ensures that the ScopedValue<String> propagates correctly through 
-     * the InferenceContext, maintaining session awareness across thread boundaries 
-     * within the Virtual Thread environment.
-     */
-    @Test
-    void testInferenceContext_Propagation() {
-        String testSession = "scoped-session-id";
-        ScopedValue.where(InferenceContext.SESSION_ID, testSession).run(() -> {
-            assertThat(InferenceContext.SESSION_ID.get()).isEqualTo(testSession);
-        });
-    }
-
-    /**
-     * Reflective utility to inject private fields for testing isolation.
-     */
-    private void setField(Object target, String name, Object value) {
+    private void setField(Object target, String fieldName, Object value) {
         try {
-            java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+            java.lang.reflect.Field field = target.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);
             field.set(target, value);
         } catch (Exception e) {

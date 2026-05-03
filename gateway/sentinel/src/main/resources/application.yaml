@@ -5,6 +5,11 @@ spring:
     virtual:
       enabled: true
 
+velo:
+  sentinel:
+    routing-mode: SHADOW    # Options: TRITON, DYNAMO, SHADOW
+    latency-threshold-ms: 200.0  # SLO for shadow mode comparisons
+
 management:
   endpoints:
     web:

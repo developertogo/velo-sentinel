@@ -119,7 +119,26 @@ tasks.withType<Test>().configureEach {
     jvmArgs("--enable-preview")
 }
 
-// This ensures bootRun works with your preferred command
+// Ensure the application stops and ports are released on CTRL-C
 tasks.withType<JavaExec>().configureEach {
     jvmArgs("--enable-preview")
+    // This allows the child process to receive the SIGINT from CTRL-C
+    standardInput = System.`in`
+}
+
+// Custom task to kill any zombie processes on our specific ports before boot
+val killStaleServers = tasks.register("killStaleServers") {
+    group = "verification"
+    description = "Kills any stale processes on ports 8080, 8001, and 9001."
+    doLast {
+        val ports = listOf(8080, 8001, 9001)
+        ports.forEach { port ->
+            ProcessBuilder("sh", "-c", "lsof -ti :$port | xargs kill -9 2>/dev/null || true").start().waitFor()
+        }
+    }
+}
+
+// Make bootRun depend on the cleanup task
+tasks.named("bootRun") {
+    dependsOn(killStaleServers)
 }
