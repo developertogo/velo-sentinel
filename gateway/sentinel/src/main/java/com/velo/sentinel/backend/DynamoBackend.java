@@ -50,18 +50,24 @@ public class DynamoBackend implements InferenceBackend {
     return infer(value, activeSession);
   }
 
+  @Override
+  public float infer(float value, String sessionId) {
+    return infer(value, sessionId, "simple");
+  }
+
   /**
-   * Executes a session-aware inference call.
+   * Executes a session-aware inference call for a specific model.
    * Manages the "Warm-up" lifecycle for disaggregated caching before 
    * delegating the actual computation to the gRPC client.
    * 
    * @param value The input feature value.
    * @param sessionId The unique session identifier used for cache routing.
+   * @param modelName Target model for inference.
    * @return The prediction result from the Dynamo service.
    */
   @Override
-  public float infer(float value, String sessionId) {
-    log.info("DYNAMO-EXECUTION [Session: {}]: Forwarding to next-gen gRPC service.", sessionId);
+  public float infer(float value, String sessionId, String modelName) {
+    log.info("DYNAMO-EXECUTION [Session: {}, Model: {}]: Forwarding to next-gen service.", sessionId, modelName);
 
     // Lifecycle Management: Track "Warm vs Cold" state for simulation observability
     if (!warmSessions.contains(sessionId)) {
@@ -72,6 +78,6 @@ public class DynamoBackend implements InferenceBackend {
     }
 
     // Delegate to the hardened gRPC client
-    return dynamoGrpcClient.callDynamo(value, sessionId);
+    return dynamoGrpcClient.callDynamo(value, sessionId, modelName);
   }
 }

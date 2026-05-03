@@ -24,7 +24,7 @@ import java.nio.ByteOrder;
  * Acts as the 'Ground Truth' for simulation.
  */
 @Component
-@Profile("dev")
+@Profile("mock-triton")
 public class MockTritonServer {
     private static final Logger log = LoggerFactory.getLogger(MockTritonServer.class);
     private Server server;
@@ -35,7 +35,7 @@ public class MockTritonServer {
             .addService(new TritonServiceImpl())
             .build()
             .start();
-        log.info("MOCK-TRITON-SERVER: Started successfully on port 8001 (Profile: dev)");
+        log.info("MOCK-TRITON-SERVER: Started successfully on port 8001 (Profile: mock-triton)");
     }
 
     @PreDestroy
@@ -52,10 +52,11 @@ public class MockTritonServer {
             // Triton returns exactly the input value (Identity model)
             // This allows us to see the +0.5 drift from Dynamo
             float inputValue = request.getInputs(0).getContents().getFp32Contents(0);
+            float tritonResult = inputValue * 2.0f;
             
             byte[] resultBytes = ByteBuffer.allocate(4)
                 .order(ByteOrder.LITTLE_ENDIAN)
-                .putFloat(inputValue)
+                .putFloat(tritonResult)
                 .array();
 
             ModelInferResponse response = ModelInferResponse.newBuilder()

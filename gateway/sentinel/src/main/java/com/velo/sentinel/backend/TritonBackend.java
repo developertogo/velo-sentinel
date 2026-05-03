@@ -36,19 +36,23 @@ public class TritonBackend implements InferenceBackend {
         return infer(value, activeSession);
     }
 
+    @Override
+    public float infer(float value, String sessionId) {
+        return infer(value, sessionId, "simple");
+    }
+
     /**
-     * Executes legacy inference with session-aware logging.
+     * Executes legacy inference with session-aware logging for a specific model.
      * Extracts and converts raw binary output from Triton tensors.
      */
     @Override
-    public float infer(float value, String sessionId) {
-        log.debug("TRITON-EXECUTION [Session: {}]: Requesting ground truth from legacy backend.", sessionId);
+    public float infer(float value, String sessionId, String modelName) {
+        log.debug("TRITON-EXECUTION [Session: {}, Model: {}]: Requesting ground truth.", sessionId, modelName);
 
         // Call Triton via the hardened gRPC client
-        ModelInferResponse response = tritonClient.infer(value);
+        ModelInferResponse response = tritonClient.infer(value, modelName);
 
         // Extraction Logic: Triton returns results in a raw binary buffer
-        // We expect a single FP32 value (4 bytes) in Little Endian format
         if (response.getRawOutputContentsCount() == 0) {
             log.error("TRITON-ERROR: Response contains no output tensors.");
             throw new RuntimeException("Empty response from Triton");
@@ -56,7 +60,7 @@ public class TritonBackend implements InferenceBackend {
 
         byte[] rawBytes = response.getRawOutputContents(0).toByteArray();
 
-        // Convert bytes → float (Standard NVIDIA/Cuda byte order)
+        // Convert bytes → float
         return ByteBuffer.wrap(rawBytes)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .getFloat();

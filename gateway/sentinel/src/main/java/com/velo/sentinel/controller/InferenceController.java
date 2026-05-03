@@ -34,7 +34,8 @@ public class InferenceController {
     @PostMapping
     public InferenceResponse infer(@RequestBody InferenceRequest request) {
         // Delegate to the bridge service which handles routing and shadow validation
-        float result = bridgeService.infer(request.value(), request.sessionId());
+        String model = request.modelName() != null ? request.modelName() : "simple";
+        float result = bridgeService.infer(request.value(), request.sessionId(), model);
         
         return new InferenceResponse(
             request.sessionId() != null ? request.sessionId() : "anonymous",

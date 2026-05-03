@@ -53,17 +53,19 @@ public class DynamoGrpcClient {
     }
 
     /**
-     * Executes the gRPC call to the Dynamo service.
+     * Executes the gRPC call to the Dynamo service for a specific model.
      * Translates domain parameters into Proto-generated stubs.
      * 
      * @param value Input feature value.
      * @param sessionId Session ID for remote cache affinity.
+     * @param modelName Target model for inference.
      * @return Prediction result extracted from the gRPC response.
      */
-    public float callDynamo(float value, String sessionId) {
+    public float callDynamo(float value, String sessionId, String modelName) {
         DynamoInferenceRequest request = DynamoInferenceRequest.newBuilder()
                 .setInputValue(value)
                 .setSessionId(sessionId)
+                .setModelName(modelName)
                 .build();
 
         DynamoInferenceResponse response = blockingStub.infer(request);

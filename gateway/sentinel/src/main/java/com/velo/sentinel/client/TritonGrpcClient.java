@@ -51,10 +51,17 @@ public class TritonGrpcClient {
     }
 
     /**
-     * Executes an inference call to the legacy Triton backend.
-     * Uses the standard ModelInferRequest pattern required by NVIDIA.
+     * Executes an inference call to the legacy Triton backend using the configured default model.
      */
     public ModelInferResponse infer(float value) {
+        return infer(value, modelName);
+    }
+
+    /**
+     * Executes an inference call to the legacy Triton backend for a specific model.
+     * Uses the standard ModelInferRequest pattern required by NVIDIA.
+     */
+    public ModelInferResponse infer(float value, String modelNameOverride) {
         try {
             // 1. Prepare the tensor contents (FP32)
             InferTensorContents contents = InferTensorContents.newBuilder()
@@ -71,7 +78,7 @@ public class TritonGrpcClient {
 
             // 3. Assemble the full request
             ModelInferRequest request = ModelInferRequest.newBuilder()
-                    .setModelName(modelName)
+                    .setModelName(modelNameOverride)
                     .addInputs(input)
                     .build();
 
@@ -79,8 +86,8 @@ public class TritonGrpcClient {
             return stub.withDeadlineAfter(200, TimeUnit.MILLISECONDS).modelInfer(request);
             
         } catch (StatusRuntimeException e) {
-            log.error("TRITON-CLIENT-ERROR: gRPC call failed. Status: {}, Description: {}", 
-                    e.getStatus().getCode(), e.getStatus().getDescription());
+            log.error("TRITON-CLIENT-ERROR: gRPC call failed for model {}. Status: {}, Description: {}", 
+                    modelNameOverride, e.getStatus().getCode(), e.getStatus().getDescription());
             throw e;
         }
     }

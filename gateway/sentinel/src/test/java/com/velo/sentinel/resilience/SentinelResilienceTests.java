@@ -27,12 +27,13 @@ public class SentinelResilienceTests {
         TritonBackend triton = mock(TritonBackend.class);
         DynamoResilienceComponent resilience = new DynamoResilienceComponent(dynamo, triton);
 
-        when(triton.infer(anyFloat())).thenReturn(10.0f);
+        // Updated signature: triton.infer(float value, String sessionId, String modelName)
+        when(triton.infer(anyFloat(), any(), anyString())).thenReturn(10.0f);
 
-        // Manually trigger the fallback to verify the fail-open logic
-        float result = resilience.failOpenToTriton(5.0f, new RuntimeException("Chaos"));
+        // Updated signature: failOpenToTriton(float value, String sessionId, String modelName, Throwable t)
+        float result = resilience.failOpenToTriton(5.0f, "test-session", "simple", new RuntimeException("Chaos"));
 
         assertThat(result).isEqualTo(10.0f);
-        verify(triton, times(1)).infer(5.0f);
+        verify(triton, times(1)).infer(5.0f, "test-session", "simple");
     }
 }

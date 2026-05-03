@@ -13,6 +13,7 @@ import java.nio.ByteOrder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyFloat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,7 +51,7 @@ public class TritonBackendTests {
                 .addRawOutputContents(ByteString.copyFrom(rawBytes))
                 .build();
 
-        when(mockClient.infer(anyFloat())).thenReturn(mockResponse);
+        when(mockClient.infer(anyFloat(), anyString())).thenReturn(mockResponse);
 
         float result = tritonBackend.infer(1.0f);
         
@@ -65,7 +66,7 @@ public class TritonBackendTests {
     @Test
     void testInfer_EmptyResponse_ThrowsException() {
         ModelInferResponse emptyResponse = ModelInferResponse.newBuilder().build();
-        when(mockClient.infer(anyFloat())).thenReturn(emptyResponse);
+        when(mockClient.infer(anyFloat(), anyString())).thenReturn(emptyResponse);
 
         assertThatThrownBy(() -> tritonBackend.infer(1.0f))
                 .isInstanceOf(RuntimeException.class)
@@ -89,6 +90,6 @@ public class TritonBackendTests {
         ModelInferResponse response = ModelInferResponse.newBuilder()
                 .addRawOutputContents(ByteString.copyFrom(bytes))
                 .build();
-        when(mockClient.infer(anyFloat())).thenReturn(response);
+        when(mockClient.infer(anyFloat(), anyString())).thenReturn(response);
     }
 }
