@@ -5,6 +5,7 @@ plugins {
 
   // gRPC + protobuf code generation
   id("com.google.protobuf") version "0.9.4"
+  jacoco
 }
 
 group = "com.velo.sentinel"
@@ -55,6 +56,16 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-test-autoconfigure:4.0.5")
   testImplementation("com.fasterxml.jackson.core:jackson-databind")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+  // OpenTelemetry
+  implementation(platform("io.opentelemetry:opentelemetry-bom:1.44.1"))
+  implementation("io.opentelemetry:opentelemetry-api")
+  implementation("io.opentelemetry:opentelemetry-sdk")
+  implementation("io.opentelemetry:opentelemetry-exporter-otlp")
+  implementation("io.opentelemetry:opentelemetry-sdk-extension-autoconfigure")
+  
+  // Bridge Micrometer to OpenTelemetry
+  implementation("io.micrometer:micrometer-tracing-bridge-otel:1.4.0")
 }
 
 configure<com.google.protobuf.gradle.ProtobufExtension> {
@@ -117,6 +128,15 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-preview")
+    finalizedBy(tasks.jacocoTestReport) // report is always generated after tests run
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test) // tests are required to run before generating the report
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
 
 // Ensure the application stops and ports are released on CTRL-C
@@ -132,13 +152,17 @@ val killStaleServers = tasks.register("killStaleServers") {
     description = "Kills any stale processes on ports 8080, 8001, and 9001."
     doLast {
         val ports = listOf(8080, 8001, 9001)
+        val currentPid = ProcessHandle.current().pid()
         ports.forEach { port ->
-            ProcessBuilder("sh", "-c", "lsof -ti :$port | xargs kill -9 2>/dev/null || true").start().waitFor()
+            // Use lsof with -c java to only find Java processes, avoiding Docker cleanup
+            // grep -v $currentPid ensures Gradle doesn't kill itself
+            ProcessBuilder("sh", "-c", "lsof -ti :$port -sTCP:LISTEN -c java | grep -v $currentPid | xargs kill -9 2>/dev/null || true").start().waitFor()
         }
     }
 }
 
 // Make bootRun depend on the cleanup task
-tasks.named("bootRun") {
-    dependsOn(killStaleServers)
-}
+// Make bootRun depend on the cleanup task
+// tasks.named("bootRun") {
+//     dependsOn(killStaleServers)
+// }

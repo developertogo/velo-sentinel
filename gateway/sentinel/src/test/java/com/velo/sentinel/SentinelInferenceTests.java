@@ -4,19 +4,20 @@ import com.velo.sentinel.backend.DynamoBackend;
 import com.velo.sentinel.backend.TritonBackend;
 import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.client.DynamoGrpcClient;
-import com.velo.sentinel.context.InferenceContext;
 import com.velo.sentinel.grpc.ModelInferResponse;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.DynamoResilienceComponent;
 import com.google.protobuf.ByteString;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.Span;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.lang.ScopedValue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyFloat;
@@ -35,17 +36,27 @@ public class SentinelInferenceTests {
     private TritonGrpcClient tritonClient;
     private DynamoGrpcClient dynamoGrpcClient;
     private MeterRegistry meterRegistry;
+    private Tracer tracer;
 
     @BeforeEach
     void setup() {
         tritonClient = mock(TritonGrpcClient.class);
         dynamoGrpcClient = mock(DynamoGrpcClient.class);
         meterRegistry = new SimpleMeterRegistry();
+        tracer = mock(Tracer.class);
+
+        // Mock Tracer to avoid NPEs
+        SpanBuilder mockSpanBuilder = mock(SpanBuilder.class);
+        Span mockSpan = mock(Span.class);
+        when(tracer.spanBuilder(anyString())).thenReturn(mockSpanBuilder);
+        when(mockSpanBuilder.setAttribute(anyString(), anyString())).thenReturn(mockSpanBuilder);
+        when(mockSpanBuilder.startSpan()).thenReturn(mockSpan);
         
         tritonBackend = new TritonBackend(tritonClient);
         dynamoBackend = new DynamoBackend(dynamoGrpcClient);
-        resilienceComponent = new DynamoResilienceComponent(dynamoBackend, tritonBackend);
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent);
+        // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
+        resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, tracer);
 
         setupTritonMock(10.0f);
     }
@@ -55,7 +66,7 @@ public class SentinelInferenceTests {
         ModelInferResponse mockResponse = ModelInferResponse.newBuilder()
                 .addRawOutputContents(ByteString.copyFrom(resultBytes))
                 .build();
-        when(tritonClient.infer(anyFloat())).thenReturn(mockResponse);
+        when(tritonClient.infer(anyFloat(), anyString())).thenReturn(mockResponse);
     }
 
     /**
@@ -78,8 +89,8 @@ public class SentinelInferenceTests {
     @Test
     void testRoutingModeDynamo_Success() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
-        when(dynamoGrpcClient.callDynamo(5.0f, "test-session")).thenReturn(15.0f);
-        float result = bridgeService.infer(5.0f, "test-session");
+        when(dynamoGrpcClient.callDynamo(5.0f, "test-session", "simple")).thenReturn(15.0f);
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
         assertThat(result).isEqualTo(15.0f);
     }
 
@@ -93,12 +104,12 @@ public class SentinelInferenceTests {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
         setField(bridgeService, "latencyThresholdMs", 1000.0);
         setupTritonMock(10.0f);
-        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString())).thenReturn(10.5f);
+        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(10.5f);
 
-        float result = bridgeService.infer(5.0f, "test-session");
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
 
         assertThat(result).isEqualTo(10.0f);
-        verify(tritonClient, atLeastOnce()).infer(5.0f);
+        verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
         
         var driftMetric = meterRegistry.find("velo.sentinel.shadow.drift").summary();
         if (driftMetric != null) {
@@ -117,12 +128,12 @@ public class SentinelInferenceTests {
         setField(bridgeService, "latencyThresholdMs", 10.0);
         setupTritonMock(10.0f);
         
-        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString())).thenAnswer(inv -> {
+        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenAnswer(inv -> {
             Thread.sleep(500);
             return 15.0f;
         });
 
-        float result = bridgeService.infer(5.0f, "test-session");
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
         assertThat(result).isEqualTo(10.0f);
     }
 
@@ -133,8 +144,44 @@ public class SentinelInferenceTests {
      */
     @Test
     void testHighAvailability_FailOpen() {
-        float result = resilienceComponent.failOpenToTriton(5.0f, new RuntimeException("Simulated"));
+        float result = resilienceComponent.failOpenToTriton(5.0f, "test-session", "simple", new RuntimeException("Simulated"));
         assertThat(result).isEqualTo(10.0f);
+    }
+
+    /**
+     * Workflow: E2E Fail-Open Orchestration.
+     * Verification: Confirms that when Dynamo fails at the gRPC level,
+     * the BridgeService successfully intercepts the error and returns 
+     * the Triton result without crashing the request.
+     */
+    @Test
+    void testE2EFailOpen() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
+        setupTritonMock(10.0f);
+        
+        // Simulate a hard gRPC failure in the backend
+        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString()))
+            .thenThrow(new RuntimeException("Dynamo Backend Unavailable"));
+
+        // Simulate Spring AOP: If protectedDynamoCall fails, it should invoke failOpenToTriton
+        doAnswer(inv -> {
+            try {
+                return inv.callRealMethod();
+            } catch (Throwable t) {
+                return resilienceComponent.failOpenToTriton(
+                    (float)inv.getArgument(0), 
+                    (String)inv.getArgument(1), 
+                    (String)inv.getArgument(2), 
+                    t
+                );
+            }
+        }).when(resilienceComponent).protectedDynamoCall(anyFloat(), anyString(), anyString());
+
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
+
+        // Should fall back to Triton (10.0)
+        assertThat(result).isEqualTo(10.0f);
+        verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
     }
 
     private void setField(Object target, String fieldName, Object value) {

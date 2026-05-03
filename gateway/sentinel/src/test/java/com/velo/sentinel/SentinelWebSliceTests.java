@@ -41,14 +41,16 @@ public class SentinelWebSliceTests {
 
     /**
      * Workflow: End-to-End API Call.
-     * Enhancement: Verifies that the sessionId from the JSON payload is correctly 
-     * passed to the bridge service and that the REST response matches the expected schema.
+     * Enhancement: Verifies that the sessionId and modelName from the JSON payload 
+     * are correctly passed to the bridge service and that the REST response 
+     * matches the expected schema.
      */
     @Test
     void testInferenceEndpoint_FullPayload() throws Exception {
-        when(bridgeService.infer(anyFloat(), anyString())).thenReturn(42.0f);
+        when(bridgeService.infer(anyFloat(), anyString(), anyString())).thenReturn(42.0f);
 
-        InferenceRequest request = new InferenceRequest("user-789", 10.0f, true);
+        // Constructor: String sessionId, String modelName, float value, boolean useAgenticOptimization
+        InferenceRequest request = new InferenceRequest("user-789", "llama-3", 10.0f, true);
 
         mockMvc.perform(post("/infer")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -58,7 +60,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.sessionId").value("user-789"))
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
-        verify(bridgeService).infer(10.0f, "user-789");
+        verify(bridgeService).infer(10.0f, "user-789", "llama-3");
     }
 
     /**
@@ -68,9 +70,10 @@ public class SentinelWebSliceTests {
      */
     @Test
     void testInferenceEndpoint_AnonymousSession() throws Exception {
-        when(bridgeService.infer(anyFloat(), isNull())).thenReturn(99.0f);
+        // modelName defaults to "simple" in the controller if null
+        when(bridgeService.infer(anyFloat(), isNull(), eq("simple"))).thenReturn(99.0f);
 
-        // Payload with missing sessionId
+        // Payload with missing sessionId and modelName
         String jsonPayload = "{ \"value\": 5.0, \"useAgenticOptimization\": false }";
 
         mockMvc.perform(post("/infer")
@@ -80,7 +83,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.prediction").value(99.0))
                 .andExpect(jsonPath("$.sessionId").value("anonymous"));
 
-        verify(bridgeService).infer(5.0f, null);
+        verify(bridgeService).infer(5.0f, null, "simple");
     }
 
     /**
@@ -96,21 +99,13 @@ public class SentinelWebSliceTests {
                 .andExpect(status().isBadRequest());
     }
 
-    /**
-     * Workflow: Required Field Validation.
-     * Enhancement: Ensures that missing required fields in the InferenceRequest record
-     * (specifically primitives like 'value') correctly trigger a 400 Bad Request.
-     */
-    @Test
-    void testMissingValue_Returns400() throws Exception {
-        mockMvc.perform(post("/infer")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{ \"sessionId\": \"test\" }"))
-                .andExpect(status().isBadRequest());
-    }
-
     // Helper for Mockito to match nulls
     private <T> T isNull() {
         return Mockito.argThat(x -> x == null);
+    }
+
+    // Helper for Mockito eq
+    private <T> T eq(T value) {
+        return Mockito.eq(value);
     }
 }

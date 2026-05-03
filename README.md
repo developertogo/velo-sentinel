@@ -16,6 +16,8 @@ To provide a production-grade, high-concurrency ML model serving gateway that ab
 - **Observability**: Integrated **Micrometer** for real-time latency tracking (Atlas/Telltale compatible).
 - **Resilience**: Implemented **fail-open circuit breakers** via `DynamoResilienceComponent` to protect against distributed inference stalls.
 - **Context Propagation**: Utilized **Java 25 Scoped Values** to maintain tracing headers across disaggregated prefill/decode task scopes.
+- **Multi-model Routing**: Dynamically routes inference requests to different backend models (e.g., GPT-4, Llama-3) based on request metadata.
+- **OpenTelemetry Tracing**: Fully integrated OTel spans for deep visibility into the orchestration and fallback lifecycles.
 
 ## Architecture
 Velo-Sentinel follows modern high-performance architectural patterns, prioritizing **Structured Concurrency** over legacy Reactive patterns.
@@ -30,6 +32,9 @@ graph TD
         Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
         TaskScope -->|Primary| Dynamo[DynamoBackend]
         TaskScope -->|Shadow| Triton[TritonBackend]
+        
+        Dynamo -->|Session Lookup| Redis[(Redis KV-Registry)]
+        Redis -.->|Cache Status| Dynamo
         
         Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
         RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
@@ -49,6 +54,11 @@ graph TD
 - **DynamoResilienceComponent**: Isolated resilience layer using Resilience4j `@CircuitBreaker`. Decouples fault tolerance from orchestration logic.
 - **Fail-Open Path**: Automatic fallback to legacy Triton ensures 100% availability during migration.
 - **AOP-Aware Proxying**: Fixed internal proxying issues via component isolation.
+
+### KV-Cache Management
+- **Global Session Registry**: Leveraging **Redis** as a disaggregated KV-Cache registry to track session "Warmth" across the cluster.
+- **Context-Aware Routing**: The gateway identifies "Cold" sessions and pre-emptively triggers KV-Cache hydration in the Dynamo backend, eliminating cold-start latency for the user.
+- **Distributed State**: Ensures that stateless Virtual Threads can rapidly re-associate users with their specific model context without expensive lookups.
 
 ## Technology Stack
 - **Language**: Java 25 (Optimized for Virtual Threads)
@@ -118,12 +128,20 @@ Velo-Sentinel is hardened with a dedicated `DynamoResilienceComponent` to handle
 - **Drift**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.drift`
 - **SLO Vetoes**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.timeout`
 - **Error Rates**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.errors`
+- **Distributed Tracing (Jaeger)**: Access the UI at [http://localhost:16686](http://localhost:16686) to visualize `VeloInference` spans.
+
+#### Local Tracing Configuration
+If you do not want to run Jaeger, you can redirect traces to the console log by setting an environment variable:
+```bash
+export OTEL_TRACES_EXPORTER=logging
+./gradlew bootRun
+```
 
 ## Future Roadmap
-- [ ] Multi-model dynamic routing
+- [x] Multi-model dynamic routing
+- [x] OpenTelemetry integration for inference tracing
 - [ ] Adaptive batching implementation
 - [ ] SLA-aware priority queuing
-- [ ] OpenTelemetry integration for inference tracing
 
 ## Intellectual Property
 This project was designed and implemented by `velo.com` as a technical demonstration of high-performance system architecture. All architectural decisions, performance optimizations, and code implementations are original work.

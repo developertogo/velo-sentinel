@@ -20,7 +20,7 @@ import java.io.IOException;
  * Only active when the "dev" profile is enabled.
  */
 @Component
-@Profile("dev")
+@Profile("mock-dynamo")
 public class MockDynamoServer {
     private static final Logger log = LoggerFactory.getLogger(MockDynamoServer.class);
     private Server server;
@@ -31,7 +31,7 @@ public class MockDynamoServer {
             .addService(new DynamoServiceImpl())
             .build()
             .start();
-        log.info("MOCK-DYNAMO-SERVER: Started successfully on port 9001 (Profile: dev)");
+        log.info("MOCK-DYNAMO-SERVER: Started successfully on port 9001 (Profile: mock-dynamo)");
     }
 
     @PreDestroy

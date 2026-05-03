@@ -24,21 +24,21 @@ public class DynamoResilienceComponent {
     }
 
     /**
-     * Executes a protected call to Dynamo.
+     * Executes a protected call to Dynamo for a specific model.
      * Trips the circuit breaker if failures exceed the threshold.
      * Fails open to Triton if the Dynamo path is unhealthy.
      */
     @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
-    public float protectedDynamoCall(float value) {
-        return dynamoBackend.infer(value);
+    public float protectedDynamoCall(float value, String sessionId, String modelName) {
+        return dynamoBackend.infer(value, sessionId, modelName);
     }
 
     /**
      * Resilience4j Fallback Handler.
      */
-    public float failOpenToTriton(float value, Throwable t) {
-        log.error("DYNAMO-FAILURE: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
-            t.getMessage());
-        return tritonBackend.infer(value);
+    public float failOpenToTriton(float value, String sessionId, String modelName, Throwable t) {
+        log.error("DYNAMO-FAILURE [Model: {}]: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",
+            modelName, t.getMessage());
+        return tritonBackend.infer(value, sessionId, modelName);
     }
 }

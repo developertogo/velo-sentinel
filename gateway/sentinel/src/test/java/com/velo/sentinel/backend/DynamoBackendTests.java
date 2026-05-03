@@ -36,7 +36,8 @@ public class DynamoBackendTests {
     @Test
     void testSessionRegistry_WarmUpFlow() {
         String sessionId = "user-99";
-        when(mockClient.callDynamo(anyFloat(), anyString())).thenReturn(5.0f);
+        // Signature: callDynamo(float value, String sessionId, String modelName)
+        when(mockClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(5.0f);
 
         // First call: Should be COLD (logged internally)
         dynamoBackend.infer(1.0f, sessionId);
@@ -44,8 +45,8 @@ public class DynamoBackendTests {
         // Second call: Should be WARM
         dynamoBackend.infer(1.0f, sessionId);
 
-        // Verify gRPC client was called twice
-        verify(mockClient, times(2)).callDynamo(1.0f, sessionId);
+        // Verify gRPC client was called twice with default model "simple"
+        verify(mockClient, times(2)).callDynamo(1.0f, sessionId, "simple");
     }
 
     /**
@@ -56,7 +57,7 @@ public class DynamoBackendTests {
     @Test
     void testInfer_ContextAwareness() {
         String testSession = "context-session";
-        when(mockClient.callDynamo(anyFloat(), eq(testSession))).thenReturn(7.0f);
+        when(mockClient.callDynamo(anyFloat(), eq(testSession), anyString())).thenReturn(7.0f);
 
         float result = ScopedValue.where(InferenceContext.SESSION_ID, testSession)
                 .call(() -> dynamoBackend.infer(1.0f));
@@ -71,11 +72,27 @@ public class DynamoBackendTests {
      */
     @Test
     void testInfer_DefaultSessionFallback() {
-        when(mockClient.callDynamo(anyFloat(), eq("default-session"))).thenReturn(9.0f);
+        when(mockClient.callDynamo(anyFloat(), eq("default-session"), anyString())).thenReturn(9.0f);
 
         // No ScopedValue bound here
         float result = dynamoBackend.infer(1.0f);
 
         assertThat(result).isEqualTo(9.0f);
+    }
+
+    /**
+     * Workflow: Multi-model Routing.
+     * Verification: Verifies that passing a specific model name propagates 
+     * correctly to the gRPC client.
+     */
+    @Test
+    void testInfer_MultiModelRouting() {
+        String model = "llama-3";
+        when(mockClient.callDynamo(anyFloat(), anyString(), eq(model))).thenReturn(10.0f);
+
+        float result = dynamoBackend.infer(1.0f, "user-1", model);
+
+        assertThat(result).isEqualTo(10.0f);
+        verify(mockClient).callDynamo(1.0f, "user-1", model);
     }
 }

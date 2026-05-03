@@ -13,6 +13,7 @@ service DynamoService {
 message DynamoInferenceRequest {
   float input_value = 1;
   string session_id = 2;
+  string model_name = 3;
 }
 
 message DynamoInferenceResponse {
