@@ -35,7 +35,7 @@ public class InferenceController {
     public InferenceResponse infer(@RequestBody InferenceRequest request) {
         // Delegate to the bridge service which handles routing and shadow validation
         String model = request.modelName() != null ? request.modelName() : "simple";
-        float result = bridgeService.infer(request.value(), request.sessionId(), model);
+        float result = bridgeService.infer(request.value(), request.sessionId(), model, request.priority());
         
         return new InferenceResponse(
             request.sessionId() != null ? request.sessionId() : "anonymous",

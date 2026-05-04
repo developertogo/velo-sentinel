@@ -1,5 +1,6 @@
 package com.velo.sentinel.service;
 
+import com.velo.sentinel.model.PriorityTier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import java.util.function.Function;
  * 
  * This service buffers individual requests into batches to maximize backend throughput.
  * It uses a background Virtual Thread to "drain" the queue based on size or time thresholds.
+ * Uses SLA-Aware Earliest Deadline First (EDF) scheduling to prevent priority starvation.
  */
 @Service
 public class AdaptiveBatcher {
@@ -22,7 +24,8 @@ public class AdaptiveBatcher {
     private final int maxBatchSize = 16;
     private final long maxWaitMs = 5; // 5ms window for batching
     
-    private final BlockingQueue<InferenceTask> queue = new LinkedBlockingQueue<>();
+    // SLA-Aware Earliest Deadline First Queue
+    private final BlockingQueue<InferenceTask> queue = new PriorityBlockingQueue<>();
     private final ExecutorService scheduler = Executors.newVirtualThreadPerTaskExecutor();
 
     public AdaptiveBatcher() {
@@ -34,11 +37,17 @@ public class AdaptiveBatcher {
      * Submits a single inference request to be batched.
      * Returns a CompletableFuture that resolves when the batch is processed.
      */
-    public CompletableFuture<Float> submit(float value, String sessionId, String modelName, 
+    public CompletableFuture<Float> submit(float value, String sessionId, String modelName, PriorityTier priority,
                                           Function<List<BatchItem>, List<Float>> batchProcessor) {
         CompletableFuture<Float> future = new CompletableFuture<>();
-        queue.add(new InferenceTask(new BatchItem(value, sessionId, modelName), future, batchProcessor));
+        long deadline = System.currentTimeMillis() + priority.getSlaMs();
+        queue.add(new InferenceTask(new BatchItem(value, sessionId, modelName), future, batchProcessor, deadline, priority));
         return future;
+    }
+
+    public CompletableFuture<Float> submit(float value, String sessionId, String modelName, 
+                                          Function<List<BatchItem>, List<Float>> batchProcessor) {
+        return submit(value, sessionId, modelName, PriorityTier.INTERACTIVE, batchProcessor);
     }
 
     private void processLoop() {
@@ -49,6 +58,13 @@ public class AdaptiveBatcher {
                 InferenceTask first = queue.poll(1, TimeUnit.SECONDS);
                 if (first == null) continue;
                 
+                // SLA Veto Logic
+                if (System.currentTimeMillis() > first.deadline()) {
+                    log.warn("SLA-VETO: Task for session {} exceeded deadline. Dropping.", first.item().sessionId());
+                    first.future().completeExceptionally(new TimeoutException("SLA Violated (Deadline passed)"));
+                    continue;
+                }
+                
                 batch.add(first);
                 long startTime = System.currentTimeMillis();
 
@@ -56,7 +72,13 @@ public class AdaptiveBatcher {
                 while (batch.size() < maxBatchSize && (System.currentTimeMillis() - startTime) < maxWaitMs) {
                     InferenceTask next = queue.poll(maxWaitMs / 2, TimeUnit.MILLISECONDS);
                     if (next != null) {
-                        batch.add(next);
+                        if (System.currentTimeMillis() > next.deadline()) {
+                            log.warn("SLA-VETO: Task for session {} exceeded deadline. Dropping.", next.item().sessionId());
+                            next.future().completeExceptionally(new TimeoutException("SLA Violated (Deadline passed)"));
+                            // Do not add to batch, continue filling
+                        } else {
+                            batch.add(next);
+                        }
                     } else {
                         break;
                     }
@@ -97,6 +119,14 @@ public class AdaptiveBatcher {
     }
 
     public record BatchItem(float value, String sessionId, String modelName) {}
+    
     private record InferenceTask(BatchItem item, CompletableFuture<Float> future, 
-                               Function<List<BatchItem>, List<Float>> processor) {}
+                               Function<List<BatchItem>, List<Float>> processor,
+                               long deadline, PriorityTier priority) implements Comparable<InferenceTask> {
+        @Override
+        public int compareTo(InferenceTask other) {
+            // Earliest Deadline First (EDF)
+            return Long.compare(this.deadline, other.deadline);
+        }
+    }
 }

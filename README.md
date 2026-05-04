@@ -18,6 +18,8 @@ To provide a production-grade, high-concurrency ML model serving gateway that ab
 - **Context Propagation**: Utilized **Java 25 Scoped Values** to maintain tracing headers across disaggregated prefill/decode task scopes.
 - **Multi-model Routing**: Dynamically routes inference requests to different backend models (e.g., GPT-4, Llama-3) based on request metadata.
 - **OpenTelemetry Tracing**: Fully integrated OTel spans for deep visibility into the orchestration and fallback lifecycles.
+- **Adaptive Batching**: Coalesces individual requests to maximize backend GPU throughput. [See Architecture Docs](gateway/sentinel/docs/BATCHING.md)
+- **SLA-Aware Priority Queuing**: Earliest Deadline First (EDF) scheduling to ensure strict latency guarantees and prevent starvation. [See Architecture Docs](gateway/sentinel/docs/PRIORITY_QUEUING.md)
 
 ## Architecture
 Velo-Sentinel follows modern high-performance architectural patterns, prioritizing **Structured Concurrency** over legacy Reactive patterns.
@@ -138,12 +140,17 @@ export OTEL_TRACES_EXPORTER=logging
 ./gradlew bootRun
 ```
 
-## Future Roadmap
-- [x] Multi-model dynamic routing
-- [x] OpenTelemetry integration for inference tracing
-- [x] Real Redis-based KV-Cache registry
-- [ ] Adaptive batching implementation
-- [ ] SLA-aware priority queuing
+### Testing SLA-Aware Priority Queuing
+You can inject the optional `priority` field into your payload to test the dynamic deadline resolution:
+```bash
+# High Priority (REALTIME SLA: 100ms)
+curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" \
+  -d '{"sessionId": "realtime-user", "value": 42, "priority": "REALTIME"}'
+
+# Low Priority (BACKGROUND SLA: 5000ms)
+curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" \
+  -d '{"sessionId": "batch-job-1", "value": 42, "priority": "BACKGROUND"}'
+```
 
 ## Intellectual Property
 This project was designed and implemented by `velo.com` as a technical demonstration of high-performance system architecture. All architectural decisions, performance optimizations, and code implementations are original work.
