@@ -18,7 +18,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.TimeUnit;
 
 /**
  * DynamoBridgeService: The L5 Migration Controller.
@@ -36,6 +38,7 @@ public class DynamoBridgeService implements InferenceBackend {
   private final TritonBackend tritonBackend;
   private final DynamoBackend dynamoBackend;
   private final DynamoResilienceComponent resilienceComponent;
+  private final AdaptiveBatcher adaptiveBatcher;
   private final Tracer tracer;
 
   @Value("${velo.sentinel.routing-mode:TRITON}")
@@ -52,11 +55,13 @@ public class DynamoBridgeService implements InferenceBackend {
       DynamoBackend dynamoBackend,
       MeterRegistry meterRegistry,
       DynamoResilienceComponent resilienceComponent,
+      AdaptiveBatcher adaptiveBatcher,
       Tracer tracer) {
     this.tritonBackend = tritonBackend;
     this.dynamoBackend = dynamoBackend;
     this.meterRegistry = meterRegistry;
     this.resilienceComponent = resilienceComponent;
+    this.adaptiveBatcher = adaptiveBatcher;
     this.tracer = tracer;
   }
 
@@ -116,8 +121,19 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   private float routeToDynamo(float value, String sessionId, String modelName) {
-    log.info("SENTINEL-MODE [DYNAMO]: Executing next-gen Dynamo path for model {}.", modelName);
-    return resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
+    try {
+      return adaptiveBatcher.submit(value, sessionId, modelName, items -> {
+        // This runs in the batcher's execution context
+        // For now, we process them one by one but in the same 'batch' execution block
+        // In a real gRPC backend, we would call a 'BatchedInfer' method
+        return items.stream()
+            .map(item -> resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName()))
+            .toList();
+      }).get(2, TimeUnit.SECONDS);
+    } catch (Exception e) {
+      log.error("BATCHING-FAILURE: Falling back to individual call. Reason: {}", e.getMessage());
+      return resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
+    }
   }
 
   private float routeShadow(float value, String sessionId, String modelName) {
@@ -130,7 +146,7 @@ public class DynamoBridgeService implements InferenceBackend {
       var dynamoTask = scope.fork(() -> resilienceComponent.protectedDynamoCall(value, sessionId, modelName));
 
       try {
-        scope.join(); 
+        scope.join();
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         log.error("SHADOW-INTERRUPTED: Execution interrupted for model {}.", modelName);
@@ -148,8 +164,10 @@ public class DynamoBridgeService implements InferenceBackend {
       if (dynamoTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
         float dynamoResult = dynamoTask.get();
         float drift = Math.abs(tritonResult - dynamoResult);
-        log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, tritonResult, dynamoResult, drift);
-        DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry).record(drift);
+        log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, tritonResult, dynamoResult,
+            drift);
+        DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry)
+            .record(drift);
         meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
       } else {
         log.warn("SHADOW-VETO [Model: {}]: Dynamo slow (State: {}).", modelName, dynamoTask.state());

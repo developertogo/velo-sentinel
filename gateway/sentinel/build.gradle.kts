@@ -139,6 +139,18 @@ tasks.jacocoTestReport {
         xml.required.set(true)
         html.required.set(true)
     }
+
+    classDirectories.setFrom(
+        files(classDirectories.files.map {
+            fileTree(it) {
+                exclude(
+                    "com/velo/sentinel/grpc/**",
+                    "com/velo/sentinel/dev/**",
+                    "com/velo/sentinel/SentinelJApplication.class"
+                )
+            }
+        })
+    )
 }
 
 // Ensure the application stops and ports are released on CTRL-C

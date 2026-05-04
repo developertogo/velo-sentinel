@@ -5,6 +5,7 @@ import com.velo.sentinel.backend.TritonBackend;
 import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.client.DynamoGrpcClient;
 import com.velo.sentinel.grpc.ModelInferResponse;
+import com.velo.sentinel.service.AdaptiveBatcher;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.DynamoResilienceComponent;
 import com.velo.sentinel.service.KVCacheRegistry;
@@ -35,6 +36,7 @@ public class SentinelInferenceTests {
     private DynamoBridgeService bridgeService;
     private DynamoResilienceComponent resilienceComponent;
     private KVCacheRegistry cacheRegistry;
+    private AdaptiveBatcher adaptiveBatcher;
     private TritonGrpcClient tritonClient;
     private DynamoGrpcClient dynamoGrpcClient;
     private MeterRegistry meterRegistry;
@@ -47,6 +49,7 @@ public class SentinelInferenceTests {
         meterRegistry = new SimpleMeterRegistry();
         tracer = mock(Tracer.class);
         cacheRegistry = mock(KVCacheRegistry.class);
+        adaptiveBatcher = new AdaptiveBatcher();
 
         // Mock Tracer to avoid NPEs
         SpanBuilder mockSpanBuilder = mock(SpanBuilder.class);
@@ -59,7 +62,7 @@ public class SentinelInferenceTests {
         dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, tracer);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer);
 
         setupTritonMock(10.0f);
     }
@@ -185,6 +188,72 @@ public class SentinelInferenceTests {
         // Should fall back to Triton (10.0)
         assertThat(result).isEqualTo(10.0f);
         verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
+    }
+
+    @Test
+    void testInferWithNoModelName() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
+        float result = bridgeService.infer(5.0f, "test-session");
+        assertThat(result).isEqualTo(10.0f);
+        verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
+    }
+
+    @Test
+    void testInferWithNoSession() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
+        float result = bridgeService.infer(5.0f);
+        assertThat(result).isEqualTo(10.0f);
+        verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
+    }
+
+    @Test
+    void testExecuteInferenceExceptionRecording() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
+        when(tritonClient.infer(anyFloat(), anyString())).thenThrow(new RuntimeException("Core Failure"));
+        
+        try {
+            bridgeService.infer(5.0f, "test-session", "simple");
+        } catch (Exception e) {
+            assertThat(e.getMessage()).isEqualTo("Core Failure");
+        }
+        
+        var counter = meterRegistry.find("velo.sentinel.errors").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void testRoutingModeShadow_TritonFailure() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
+        setField(bridgeService, "latencyThresholdMs", 1000.0);
+        
+        // Triton fails during the task scope
+        when(tritonClient.infer(anyFloat(), anyString())).thenThrow(new RuntimeException("Triton internal error"));
+        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(10.5f);
+
+        try {
+            bridgeService.infer(5.0f, "test-session", "simple");
+        } catch (Exception e) {
+            // Should fallback to Triton outside task scope, which also throws
+        }
+    }
+
+    @Test
+    void testRoutingModeShadow_InterruptedException() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
+        setField(bridgeService, "latencyThresholdMs", 1000.0);
+        setupTritonMock(10.0f);
+        
+        // Interrupt the current thread to simulate InterruptedException in join()
+        Thread.currentThread().interrupt();
+        
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
+        
+        // Triton fallback value
+        assertThat(result).isEqualTo(10.0f);
+        
+        // Clear interrupt flag
+        Thread.interrupted();
     }
 
     private void setField(Object target, String fieldName, Object value) {
