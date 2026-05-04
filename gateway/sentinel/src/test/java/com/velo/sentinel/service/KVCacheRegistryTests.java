@@ -77,4 +77,43 @@ public class KVCacheRegistryTests {
         // Should return false (COLD) instead of throwing exception
         assertThat(failureRegistry.isSessionWarm("any-session")).isFalse();
     }
+
+    @Test
+    void testNullSessionIdIsAlwaysCold() {
+        assertThat(cacheRegistry.isSessionWarm(null)).isFalse();
+        cacheRegistry.markSessionActive(null);
+        assertThat(cacheRegistry.isSessionWarm(null)).isFalse();
+    }
+
+    @Test
+    void testRedisWriteFailure() {
+        StringRedisTemplate mockTemplate = mock(StringRedisTemplate.class);
+        org.springframework.data.redis.core.ValueOperations<String, String> mockOps = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(mockTemplate.opsForValue()).thenReturn(mockOps);
+        doThrow(new RuntimeException("Write Failure")).when(mockOps).set(anyString(), anyString(), any(java.time.Duration.class));
+
+        KVCacheRegistry failureRegistry = new KVCacheRegistry(mockTemplate);
+        
+        // This should not throw an exception
+        failureRegistry.markSessionActive("some-session");
+    }
+
+    @Test
+    void testSessionWarmthSuccessMock() {
+        StringRedisTemplate mockTemplate = mock(StringRedisTemplate.class);
+        when(mockTemplate.hasKey(anyString())).thenReturn(true);
+        KVCacheRegistry mockRegistry = new KVCacheRegistry(mockTemplate);
+        assertThat(mockRegistry.isSessionWarm("test-session")).isTrue();
+    }
+
+    @Test
+    void testMarkSessionActiveSuccessMock() {
+        StringRedisTemplate mockTemplate = mock(StringRedisTemplate.class);
+        org.springframework.data.redis.core.ValueOperations<String, String> mockOps = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(mockTemplate.opsForValue()).thenReturn(mockOps);
+        KVCacheRegistry mockRegistry = new KVCacheRegistry(mockTemplate);
+        
+        mockRegistry.markSessionActive("test-session");
+        verify(mockOps, times(1)).set(eq("sentinel:session:test-session"), eq("WARM"), any(java.time.Duration.class));
+    }
 }
