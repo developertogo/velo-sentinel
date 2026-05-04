@@ -16,8 +16,14 @@ package com.velo.sentinel.backend;
  * 3. STACK TRACES: Synchronous signatures preserve full stack traces, which are
  *    frequently lost in complex asynchronous chains.
  */
+import com.velo.sentinel.model.PriorityTier;
+
 public interface InferenceBackend {
   float infer(float value);
   float infer(float value, String sessionId);
   float infer(float value, String sessionId, String modelName);
+  
+  default float infer(float value, String sessionId, String modelName, PriorityTier priority) {
+      return infer(value, sessionId, modelName);
+  }
 }

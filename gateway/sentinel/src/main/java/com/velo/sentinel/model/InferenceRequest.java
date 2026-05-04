@@ -9,8 +9,17 @@ public record InferenceRequest(
     String sessionId,
     String modelName,
     float value,
-    boolean useAgenticOptimization
+    boolean useAgenticOptimization,
+    PriorityTier priority
 ) {
-    // Provide a canonical constructor or a secondary one for convenience if needed,
-    // but the record provides the main one.
+    public InferenceRequest {
+        if (priority == null) {
+            priority = PriorityTier.INTERACTIVE; // Default to interactive if not provided
+        }
+    }
+    
+    // Legacy constructor for existing tests/calls
+    public InferenceRequest(String sessionId, String modelName, float value, boolean useAgenticOptimization) {
+        this(sessionId, modelName, value, useAgenticOptimization, PriorityTier.INTERACTIVE);
+    }
 }

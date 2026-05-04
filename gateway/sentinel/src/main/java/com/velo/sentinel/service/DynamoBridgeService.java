@@ -83,18 +83,26 @@ public class DynamoBridgeService implements InferenceBackend {
         .call(() -> executeInference(value, safeSession, modelName));
   }
 
-  private float executeInference(float value, String sessionId, String modelName) {
+  @Override
+  public float infer(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
+    String safeSession = (sessionId != null) ? sessionId : "anonymous";
+    return ScopedValue.where(InferenceContext.SESSION_ID, safeSession)
+        .call(() -> executeInference(value, safeSession, modelName, priority));
+  }
+
+  private float executeInference(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
     Span span = tracer.spanBuilder("VeloInference")
         .setAttribute("inference.model", modelName)
         .setAttribute("inference.mode", routingMode.name())
         .setAttribute("inference.session", sessionId)
+        .setAttribute("inference.priority", priority != null ? priority.name() : "NONE")
         .startSpan();
 
     try (Scope scope = span.makeCurrent()) {
       Timer.Sample sample = Timer.start(meterRegistry);
       try {
         float result = switch (routingMode) {
-          case DYNAMO -> routeToDynamo(value, sessionId, modelName);
+          case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
           case SHADOW -> routeShadow(value, sessionId, modelName);
           case TRITON -> routeToTriton(value, sessionId, modelName);
         };
@@ -111,6 +119,10 @@ public class DynamoBridgeService implements InferenceBackend {
     }
   }
 
+  private float executeInference(float value, String sessionId, String modelName) {
+      return executeInference(value, sessionId, modelName, com.velo.sentinel.model.PriorityTier.INTERACTIVE);
+  }
+
   private String determineSession() {
     return InferenceContext.SESSION_ID.isBound() ? InferenceContext.SESSION_ID.get() : "legacy-path";
   }
@@ -120,9 +132,9 @@ public class DynamoBridgeService implements InferenceBackend {
     return tritonBackend.infer(value, sessionId, modelName);
   }
 
-  private float routeToDynamo(float value, String sessionId, String modelName) {
+  private float routeToDynamo(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
     try {
-      return adaptiveBatcher.submit(value, sessionId, modelName, items -> {
+      return adaptiveBatcher.submit(value, sessionId, modelName, priority, items -> {
         // This runs in the batcher's execution context
         // For now, we process them one by one but in the same 'batch' execution block
         // In a real gRPC backend, we would call a 'BatchedInfer' method

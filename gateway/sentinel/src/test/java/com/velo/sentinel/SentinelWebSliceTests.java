@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -47,7 +48,7 @@ public class SentinelWebSliceTests {
      */
     @Test
     void testInferenceEndpoint_FullPayload() throws Exception {
-        when(bridgeService.infer(anyFloat(), anyString(), anyString())).thenReturn(42.0f);
+        when(bridgeService.infer(anyFloat(), anyString(), anyString(), any())).thenReturn(42.0f);
 
         // Constructor: String sessionId, String modelName, float value, boolean useAgenticOptimization
         InferenceRequest request = new InferenceRequest("user-789", "llama-3", 10.0f, true);
@@ -60,7 +61,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.sessionId").value("user-789"))
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
-        verify(bridgeService).infer(10.0f, "user-789", "llama-3");
+        verify(bridgeService).infer(10.0f, "user-789", "llama-3", com.velo.sentinel.model.PriorityTier.INTERACTIVE);
     }
 
     /**
@@ -71,7 +72,7 @@ public class SentinelWebSliceTests {
     @Test
     void testInferenceEndpoint_AnonymousSession() throws Exception {
         // modelName defaults to "simple" in the controller if null
-        when(bridgeService.infer(anyFloat(), isNull(), eq("simple"))).thenReturn(99.0f);
+        when(bridgeService.infer(anyFloat(), isNull(), eq("simple"), any())).thenReturn(99.0f);
 
         // Payload with missing sessionId and modelName
         String jsonPayload = "{ \"value\": 5.0, \"useAgenticOptimization\": false }";
@@ -83,7 +84,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.prediction").value(99.0))
                 .andExpect(jsonPath("$.sessionId").value("anonymous"));
 
-        verify(bridgeService).infer(5.0f, null, "simple");
+        verify(bridgeService).infer(eq(5.0f), isNull(), eq("simple"), any());
     }
 
     /**

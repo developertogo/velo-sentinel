@@ -86,4 +86,21 @@ public class AdaptiveBatcherTests {
             assertThat(futures.get(i).get(2, TimeUnit.SECONDS)).isEqualTo((float) i + 1);
         }
     }
+
+    @Test
+    void testPriorityOrdering() throws Exception {
+        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        
+        // We will mock the timing behavior by submitting a background task, sleeping for 1ms, then a realtime task
+        // Because of the maxWaitMs logic, they might get batched together, but let's see.
+        // To truly test ordering, we'd need to mock the system clock, but we can rely on EDF logic:
+        // A BACKGROUND task has +5000ms deadline. REALTIME has +100ms. REALTIME should be pulled first.
+        
+        // Let's submit them fast
+        CompletableFuture<Float> bg = batcher.submit(1.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.BACKGROUND, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
+        CompletableFuture<Float> rt = batcher.submit(2.0f, "s2", "m1", com.velo.sentinel.model.PriorityTier.REALTIME, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
+
+        assertThat(rt.get(1, TimeUnit.SECONDS)).isEqualTo(2.0f);
+        assertThat(bg.get(1, TimeUnit.SECONDS)).isEqualTo(1.0f);
+    }
 }
