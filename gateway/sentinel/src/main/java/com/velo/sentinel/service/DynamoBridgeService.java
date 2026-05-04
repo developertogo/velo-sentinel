@@ -151,11 +151,13 @@ public class DynamoBridgeService implements InferenceBackend {
   private float routeShadow(float value, String sessionId, String modelName) {
     log.info("SENTINEL-MODE [SHADOW]: Performing side-by-side validation for model {}...", modelName);
 
+    // Phase 1: Get Triton result with a tight, bounded scope.
+    // We do NOT block on Dynamo here — that would add latency to the user-facing response.
+    final float tritonResult;
     try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll(),
         cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) latencyThresholdMs)))) {
 
       var tritonTask = scope.fork(() -> tritonBackend.infer(value, sessionId, modelName));
-      var dynamoTask = scope.fork(() -> resilienceComponent.protectedDynamoCall(value, sessionId, modelName));
 
       try {
         scope.join();
@@ -164,31 +166,35 @@ public class DynamoBridgeService implements InferenceBackend {
         log.error("SHADOW-INTERRUPTED: Execution interrupted for model {}.", modelName);
       }
 
-      float tritonResult;
-      if (tritonTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
-        tritonResult = tritonTask.get();
-      } else {
-        log.error("SHADOW-CRITICAL: Triton failed (State: {}). Falling back.", tritonTask.state());
-        // Force direct call to triton as fallback
-        return tritonBackend.infer(value, sessionId, modelName);
+      if (tritonTask.state() != StructuredTaskScope.Subtask.State.SUCCESS) {
+        log.error("SHADOW-CRITICAL: Triton (Ground Truth) failed (State: {}). Attempting best-effort Dynamo fallback.", tritonTask.state());
+        // Triton is the ground truth — if it's down, fall back to Dynamo as best-effort
+        // rather than retrying a known-broken backend.
+        return resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
       }
 
-      if (dynamoTask.state() == StructuredTaskScope.Subtask.State.SUCCESS) {
-        float dynamoResult = dynamoTask.get();
-        float drift = Math.abs(tritonResult - dynamoResult);
-        log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, tritonResult, dynamoResult,
-            drift);
-        DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry)
-            .record(drift);
-        meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
-      } else {
-        log.warn("SHADOW-VETO [Model: {}]: Dynamo slow (State: {}).", modelName, dynamoTask.state());
-        meterRegistry.counter("velo.sentinel.shadow.timeout", "model", modelName).increment();
-      }
-
-      return tritonResult;
+      tritonResult = tritonTask.get();
     } catch (Exception e) {
       return tritonBackend.infer(value, sessionId, modelName);
     }
+
+    // Phase 2: Kick off Dynamo comparison in the background — completely decoupled from the
+    // user response. This guarantees Shadow mode NEVER adds latency to the critical path.
+    final float capturedResult = tritonResult;
+    CompletableFuture.runAsync(() -> {
+      try {
+        float dynamoResult = resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
+        float drift = Math.abs(capturedResult - dynamoResult);
+        log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, capturedResult, dynamoResult, drift);
+        DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry).record(drift);
+        meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
+      } catch (Exception e) {
+        log.warn("SHADOW-VETO [Model: {}]: Dynamo comparison failed asynchronously: {}", modelName, e.getMessage());
+        meterRegistry.counter("velo.sentinel.shadow.timeout", "model", modelName).increment();
+      }
+    });
+
+    return tritonResult;
   }
 }
+

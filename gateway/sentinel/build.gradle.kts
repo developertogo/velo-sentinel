@@ -91,26 +91,6 @@ configure<com.google.protobuf.gradle.ProtobufExtension> {
     }
 }
 
-// protobuf {
-//     protoc {
-//         artifact = "com.google.protobuf:protoc:3.25.3"
-//     }
-
-//     plugins {
-//         id("grpc") {
-//             artifact = "io.grpc:protoc-gen-grpc-java:1.64.0"
-//         }
-//     }
-
-//     generateProtoTasks {
-//         all().forEach { task ->
-//             task.plugins {
-//                 id("grpc")
-//             }
-//         }
-//     }
-// }
-
 sourceSets {
     main {
         java {

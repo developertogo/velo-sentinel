@@ -126,6 +126,28 @@ Velo-Sentinel is hardened with a dedicated `DynamoResilienceComponent` to handle
    ```
    *Expected Result*: Status `SUCCESS`, prediction `10.0` (Triton Ground Truth). Check logs for `SHADOW-VETO`.
 
+### Failover Strategies
+Velo-Sentinel implements a layered resilience model. Every failure scenario has a defined, tested fallback path — no request should ever receive an unhandled error.
+
+| Scenario | Condition | Failover Behavior |
+|---|---|---|
+| **Dynamo Backend Crash** | `DYNAMO` or `SHADOW` mode; Dynamo gRPC throws | `DynamoResilienceComponent` circuit breaker trips → fall back to **Triton** |
+| **Triton Ground Truth Loss** | `SHADOW` mode; Triton `StructuredTaskScope` fails or times out | Fall back to **Dynamo** as a best-effort prediction (avoids retrying a known-broken backend) |
+| **Redis KV-Cache Outage** | `KVCacheRegistry` throws `RedisConnectionFailureException` | **Fail-Open** → treat every session as Cold Start; inference continues at slightly higher latency |
+| **Batching Failure** | `AdaptiveBatcher` timeout or processor exception | Fall back to a **direct, individual** `protectedDynamoCall` |
+| **SLA Deadline Exceeded** | Task sits in priority queue past its `PriorityTier` SLA | **SLA-Veto**: task is dropped with `TimeoutException`; GPU cycles are not wasted |
+
+#### Failover Decision Tree (Shadow Mode)
+```
+SHADOW request received
+    └─ Triton scope succeeds?
+        ├─ YES → return Triton result; compare Dynamo async (zero latency impact)
+        └─ NO  → Dynamo best-effort via resilienceComponent
+                    └─ Dynamo also fails?
+                        └─ resilienceComponent circuit breaker → Triton direct call
+```
+
+
 ### Metrics & Observability
 - **KV-Cache Hits**: `sentinel:session:<id>` in Redis.
 - **Drift**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.drift`

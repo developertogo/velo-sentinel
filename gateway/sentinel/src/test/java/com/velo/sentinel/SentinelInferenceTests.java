@@ -243,15 +243,18 @@ public class SentinelInferenceTests {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
         setField(bridgeService, "latencyThresholdMs", 1000.0);
         setupTritonMock(10.0f);
-        
+        // Stub Dynamo so the best-effort fallback returns a real value
+        when(dynamoGrpcClient.callDynamo(5.0f, "test-session", "simple")).thenReturn(7.0f);
+
         // Interrupt the current thread to simulate InterruptedException in join()
         Thread.currentThread().interrupt();
-        
+
         float result = bridgeService.infer(5.0f, "test-session", "simple");
-        
-        // Triton fallback value
-        assertThat(result).isEqualTo(10.0f);
-        
+
+        // When Triton's scope is interrupted, we now fall back to Dynamo (protectedDynamoCall)
+        // as best-effort rather than retrying the known-broken Triton backend.
+        assertThat(result).isEqualTo(7.0f);
+
         // Clear interrupt flag
         Thread.interrupted();
     }
