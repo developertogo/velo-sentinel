@@ -125,6 +125,7 @@ Velo-Sentinel is hardened with a dedicated `DynamoResilienceComponent` to handle
    *Expected Result*: Status `SUCCESS`, prediction `10.0` (Triton Ground Truth). Check logs for `SHADOW-VETO`.
 
 ### Metrics & Observability
+- **KV-Cache Hits**: `sentinel:session:<id>` in Redis.
 - **Drift**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.drift`
 - **SLO Vetoes**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.timeout`
 - **Error Rates**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.errors`
@@ -140,6 +141,7 @@ export OTEL_TRACES_EXPORTER=logging
 ## Future Roadmap
 - [x] Multi-model dynamic routing
 - [x] OpenTelemetry integration for inference tracing
+- [x] Real Redis-based KV-Cache registry
 - [ ] Adaptive batching implementation
 - [ ] SLA-aware priority queuing
 

@@ -25,6 +25,7 @@ dependencies {
 
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
+  implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
   // Using spring-aspects directly to bypass the 'starter-aop' resolution bug
   implementation("org.springframework:spring-aspects:7.0.6")
@@ -56,6 +57,7 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-test-autoconfigure:4.0.5")
   testImplementation("com.fasterxml.jackson.core:jackson-databind")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  testImplementation("it.ozimov:embedded-redis:0.7.3")
 
   // OpenTelemetry
   implementation(platform("io.opentelemetry:opentelemetry-bom:1.44.1"))
