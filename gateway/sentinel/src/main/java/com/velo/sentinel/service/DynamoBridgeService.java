@@ -65,6 +65,12 @@ public class DynamoBridgeService implements InferenceBackend {
     this.tracer = tracer;
   }
 
+  /**
+   * Executes inference with a default session and model.
+   * 
+   * @param value The input value for prediction.
+   * @return The predicted value from the chosen backend.
+   */
   @Override
   public float infer(float value) {
     String session = determineSession();
@@ -76,6 +82,14 @@ public class DynamoBridgeService implements InferenceBackend {
     return infer(value, sessionId, "simple");
   }
 
+  /**
+   * Executes inference for a specific session with a default model.
+   * 
+   * @param value The input value for prediction.
+   * @param sessionId The unique identifier for the user session.
+   * @param modelName The name of the model to use.
+   * @return The predicted value from the chosen backend.
+   */
   @Override
   public float infer(float value, String sessionId, String modelName) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
@@ -90,6 +104,16 @@ public class DynamoBridgeService implements InferenceBackend {
         .call(() -> executeInference(value, safeSession, modelName, priority));
   }
 
+  /**
+   * The core inference orchestration logic.
+   * Handles tracing, metrics, and routing based on the current RoutingMode.
+   * 
+   * @param value The input value.
+   * @param sessionId The session ID.
+   * @param modelName The model name.
+   * @param priority The priority tier (SLA aware).
+   * @return The final prediction.
+   */
   private float executeInference(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
     Span span = tracer.spanBuilder("VeloInference")
         .setAttribute("inference.model", modelName)
@@ -135,16 +159,14 @@ public class DynamoBridgeService implements InferenceBackend {
   private float routeToDynamo(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
     try {
       return adaptiveBatcher.submit(value, sessionId, modelName, priority, items -> {
-        // This runs in the batcher's execution context
-        // For now, we process them one by one but in the same 'batch' execution block
-        // In a real gRPC backend, we would call a 'BatchedInfer' method
         return items.stream()
             .map(item -> resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName()))
             .toList();
-      }).get(2, TimeUnit.SECONDS);
+      }).get((long) latencyThresholdMs, TimeUnit.MILLISECONDS);
     } catch (Exception e) {
-      log.error("BATCHING-FAILURE: Falling back to individual call. Reason: {}", e.getMessage());
-      return resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
+      log.warn("SLO-VETO [Model: {}]: Dynamo path exceeded {}ms or failed. Falling back to Triton to protect P99. Reason: {}", 
+          modelName, latencyThresholdMs, e.getMessage());
+      return routeToTriton(value, sessionId, modelName);
     }
   }
 

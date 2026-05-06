@@ -14,6 +14,7 @@ public record InferenceResponse(
     public enum Status {
         SUCCESS,
         FAILURE,
-        CIRCUIT_OPEN
+        CIRCUIT_OPEN,
+        BACKEND_OUTAGE
     }
 }

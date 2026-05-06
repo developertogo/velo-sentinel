@@ -35,7 +35,13 @@ public class AdaptiveBatcher {
 
     /**
      * Submits a single inference request to be batched.
-     * Returns a CompletableFuture that resolves when the batch is processed.
+     * 
+     * @param value The input value.
+     * @param sessionId The session ID.
+     * @param modelName The model name.
+     * @param priority The priority tier (affects SLA and EDF scheduling).
+     * @param batchProcessor The function to execute the batch (usually a gRPC call).
+     * @return A CompletableFuture that resolves when the batch is processed.
      */
     public CompletableFuture<Float> submit(float value, String sessionId, String modelName, PriorityTier priority,
                                           Function<List<BatchItem>, List<Float>> batchProcessor) {
@@ -45,6 +51,9 @@ public class AdaptiveBatcher {
         return future;
     }
 
+    /**
+     * Submits a request with default INTERACTIVE priority.
+     */
     public CompletableFuture<Float> submit(float value, String sessionId, String modelName, 
                                           Function<List<BatchItem>, List<Float>> batchProcessor) {
         return submit(value, sessionId, modelName, PriorityTier.INTERACTIVE, batchProcessor);

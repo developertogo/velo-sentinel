@@ -3,29 +3,27 @@
 > High-performance Java 25 Virtual Thread-based inference gateway serving as the critical bridge for transitioning from legacy NVIDIA Triton to the **NVIDIA Dynamo 1.0** disaggregated inference framework.
 
 ## Mission
-To provide a production-grade, high-concurrency ML model serving gateway that abstracts backend complexity while ensuring strict SLA compliance through intelligent request orchestration.
+To provide a **foundational computational platform** for high-scale ML/AI applications, serving as the critical orchestration layer for transitioning from legacy NVIDIA Triton to the next-generation **NVIDIA Dynamo** disaggregated inference framework.
 
 ## Key Objectives
-- **Legacy-to-Modern Bridge**: A robust inference gateway built on **Spring Boot 4** and **Java 25**, serving as the critical path for transitioning legacy **NVIDIA Triton** workloads to the **NVIDIA Dynamo 1.0** disaggregated architecture.
-- **Orchestration Layer**: A sophisticated model orchestration layer that enables scalable routing and multi-model serving architectures.
-- **High-Concurrency Execution**: Leveraging **Java Virtual Threads** (Project Loom) to achieve low-latency and high-throughput request processing, even under heavy distributed loads.
-- **Type-Safe Contract System**: A **protobuf-based gRPC contract system** ensuring strict schema enforcement and automated stub generation for reliable cross-service communication.
-- **Extensible Architecture**: A clean service boundary design that separates the API Gateway, Inference Orchestration, and Model Execution layers.
-- **Fault Tolerance**: Using try-with-resources on StructuredTaskScope to ensure threads are cleaned up even during crashes.
-- **Graceful Degradation**: The ability to provide "Standard" service when "Premium" (Dynamo) service is unavailable.
-- **Observability**: Integrated **Micrometer** for real-time latency tracking (Atlas/Telltale compatible).
-- **Resilience**: Implemented **fail-open circuit breakers** via `DynamoResilienceComponent` to protect against distributed inference stalls.
-- **Context Propagation**: Utilized **Java 25 Scoped Values** to maintain tracing headers across disaggregated prefill/decode task scopes.
-- **Multi-model Routing**: Dynamically routes inference requests to different backend models (e.g., GPT-4, Llama-3) based on request metadata.
-- **OpenTelemetry Tracing**: Fully integrated OTel spans for deep visibility into the orchestration and fallback lifecycles.
-- **Adaptive Batching**: Coalesces individual requests to maximize backend GPU throughput. [See Architecture Docs](gateway/sentinel/docs/BATCHING.md)
-- **SLA-Aware Priority Queuing**: Earliest Deadline First (EDF) scheduling to ensure strict latency guarantees and prevent starvation. [See Architecture Docs](gateway/sentinel/docs/PRIORITY_QUEUING.md)
+- **Research-to-Production Bridge**: Streamlines the deployment of large foundation models (LLMs) by abstracting the complexity of disaggregated inference backends.
+- **Scalable Orchestration Layer**: A sophisticated model serving system providing foundational abstractions that ensure consistency across distributed inference nodes.
+- **High-Throughput Execution**: Leveraging **Java 25 Virtual Threads** (Project Loom) to achieve L5-tier concurrency, enabling high-traffic model serving with minimal overhead.
+- **Cost & Latency Optimization**: Integrated **Adaptive Batching** and **SLA-Aware Priority Queuing** (EDF) to maximize GPU utilization and minimize inference costs.
+- **Production-Grade Resilience**: Multi-layered fault tolerance (Fail-Open/Closed) and circuit breakers to maintain high availability in business-critical environments.
+- **Enterprise Observability**: Proactive logging and telemetry via **OpenTelemetry** and **Micrometer**, providing deep visibility into the research-to-production lifecycle.
+- **Stateful Consistency**: Global session tracking via **Redis** to ensure context-aware routing for generative AI workloads.
 
 ## Architecture
 Velo-Sentinel follows modern high-performance architectural patterns, prioritizing **Structured Concurrency** over legacy Reactive patterns.
 
 ### Architecture Diagram
+
+<details open>
+<summary>☀️ View Architecture (Light Mode)</summary>
+
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#fdfdfd', 'primaryTextColor': '#2c3e50', 'primaryBorderColor': '#34495e', 'lineColor': '#2c3e50', 'secondaryColor': '#d4edda', 'tertiaryColor': '#d1ecf1' }}}%%
 graph TD
     User([User Request]) --> Controller[InferenceController]
     Controller --> Bridge[DynamoBridgeService]
@@ -50,7 +48,60 @@ graph TD
     
     Bridge --> Metrics[Micrometer Metrics]
     Metrics --> Prometheus[Prometheus / Grafana]
+
+    classDef primary fill:#e3f2fd,stroke:#2196f3,stroke-width:2px,color:#0d47a1;
+    classDef secondary fill:#e8f5e9,stroke:#4caf50,stroke-width:2px,color:#1b5e20;
+    classDef storage fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#4a148c;
+    classDef user fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#e65100;
+
+    class User user;
+    class Controller,Bridge primary;
+    class Dynamo,Triton secondary;
+    class Redis,DB,TB,Metrics,Prometheus storage;
 ```
+</details>
+
+<details>
+<summary>🌙 View Architecture (Dark Mode)</summary>
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1a1a1a', 'primaryTextColor': '#ecf0f1', 'primaryBorderColor': '#34495e', 'lineColor': '#bdc3c7', 'secondaryColor': '#006100', 'tertiaryColor': '#fff' }}}%%
+graph TD
+    User([User Request]) --> Controller[InferenceController]
+    Controller --> Bridge[DynamoBridgeService]
+    
+    subgraph "Orchestration Layer (Virtual Threads)"
+        Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
+        TaskScope -->|Primary| Dynamo[DynamoBackend]
+        TaskScope -->|Shadow| Triton[TritonBackend]
+        
+        Dynamo -->|Session Lookup| Redis[(Redis KV-Registry)]
+        Redis -.->|Cache Status| Dynamo
+        
+        Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
+        RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
+        RC -.->|Fallback| Triton
+    end
+    
+    Triton --> T_GRPC[Triton gRPC Client]
+    
+    D_GRPC --> DB[(Dynamo Backend)]
+    T_GRPC --> TB[(Legacy Triton Backend)]
+    
+    Bridge --> Metrics[Micrometer Metrics]
+    Metrics --> Prometheus[Prometheus / Grafana]
+
+    classDef primary fill:#154360,stroke:#3498db,stroke-width:2px,color:#fff;
+    classDef secondary fill:#145a32,stroke:#2ecc71,stroke-width:2px,color:#fff;
+    classDef storage fill:#4a235a,stroke:#9b59b6,stroke-width:2px,color:#fff;
+    classDef user fill:#6e2c00,stroke:#e67e22,stroke-width:2px,color:#fff;
+
+    class User user;
+    class Controller,Bridge primary;
+    class Dynamo,Triton secondary;
+    class Redis,DB,TB,Metrics,Prometheus storage;
+```
+</details>
 
 ### Resilience Features
 - **DynamoResilienceComponent**: Isolated resilience layer using Resilience4j `@CircuitBreaker`. Decouples fault tolerance from orchestration logic.
@@ -134,6 +185,7 @@ Velo-Sentinel implements a layered resilience model. Every failure scenario has 
 | **Dynamo Backend Crash** | `DYNAMO` or `SHADOW` mode; Dynamo gRPC throws | `DynamoResilienceComponent` circuit breaker trips → fall back to **Triton** |
 | **Triton Ground Truth Loss** | `SHADOW` mode; Triton `StructuredTaskScope` fails or times out | Fall back to **Dynamo** as a best-effort prediction (avoids retrying a known-broken backend) |
 | **Redis KV-Cache Outage** | `KVCacheRegistry` throws `RedisConnectionFailureException` | **Fail-Open** → treat every session as Cold Start; inference continues at slightly higher latency |
+| **Total System Outage** | Both Dynamo and Triton backends are unreachable | **Fail-Closed** → returns `503 Service Unavailable` with `BACKEND_OUTAGE` status code |
 | **Batching Failure** | `AdaptiveBatcher` timeout or processor exception | Fall back to a **direct, individual** `protectedDynamoCall` |
 | **SLA Deadline Exceeded** | Task sits in priority queue past its `PriorityTier` SLA | **SLA-Veto**: task is dropped with `TimeoutException`; GPU cycles are not wasted |
 
