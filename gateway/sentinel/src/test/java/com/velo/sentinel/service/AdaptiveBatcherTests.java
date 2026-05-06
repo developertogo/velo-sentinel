@@ -103,4 +103,24 @@ public class AdaptiveBatcherTests {
         assertThat(rt.get(1, TimeUnit.SECONDS)).isEqualTo(2.0f);
         assertThat(bg.get(1, TimeUnit.SECONDS)).isEqualTo(1.0f);
     }
+    
+    @Test
+    void testMaxBatchSizeTriggersExecution() throws Exception {
+        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AtomicInteger batchCount = new AtomicInteger(0);
+        int totalTasks = 32; // Exactly 2 batches of 16
+        
+        List<CompletableFuture<Float>> futures = new ArrayList<>();
+        for (int i = 0; i < totalTasks; i++) {
+            futures.add(batcher.submit((float)i, "s", "m", items -> {
+                batchCount.incrementAndGet();
+                return items.stream().map(it -> it.value()).toList();
+            }));
+        }
+        
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(5, TimeUnit.SECONDS);
+        
+        // Should have processed exactly 2 batches
+        assertThat(batchCount.get()).isEqualTo(2);
+    }
 }

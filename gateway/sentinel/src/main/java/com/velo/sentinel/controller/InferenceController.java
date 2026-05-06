@@ -32,15 +32,29 @@ public class InferenceController {
      * @return InferenceResponse with prediction results and execution status.
      */
     @PostMapping
-    public InferenceResponse infer(@RequestBody InferenceRequest request) {
-        // Delegate to the bridge service which handles routing and shadow validation
+    public org.springframework.http.ResponseEntity<InferenceResponse> infer(@RequestBody InferenceRequest request) {
         String model = request.modelName() != null ? request.modelName() : "simple";
-        float result = bridgeService.infer(request.value(), request.sessionId(), model, request.priority());
+        String sessionId = request.sessionId() != null ? request.sessionId() : "anonymous";
         
-        return new InferenceResponse(
-            request.sessionId() != null ? request.sessionId() : "anonymous",
-            result,
-            InferenceResponse.Status.SUCCESS
-        );
+        try {
+            float result = bridgeService.infer(request.value(), request.sessionId(), model, request.priority());
+            return org.springframework.http.ResponseEntity.ok(new InferenceResponse(
+                sessionId,
+                result,
+                InferenceResponse.Status.SUCCESS
+            ));
+        } catch (Exception e) {
+            // Log the critical outage
+            org.slf4j.LoggerFactory.getLogger(InferenceController.class)
+                .error("CRITICAL-OUTAGE: Total system failure for session {}. Reason: {}", sessionId, e.getMessage());
+            
+            return org.springframework.http.ResponseEntity
+                .status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new InferenceResponse(
+                    sessionId,
+                    0.0f,
+                    InferenceResponse.Status.BACKEND_OUTAGE
+                ));
+        }
     }
 }

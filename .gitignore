@@ -6,6 +6,10 @@ __pycache__/
 
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+/.agents/
+/.claude/
+/.kilocode/
+skills-lock.json
 
 # macOS
 .DS_Store

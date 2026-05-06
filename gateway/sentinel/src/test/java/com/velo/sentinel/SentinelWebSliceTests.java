@@ -100,6 +100,26 @@ public class SentinelWebSliceTests {
                 .andExpect(status().isBadRequest());
     }
 
+    /**
+     * Workflow: Total System Outage Resilience.
+     * Verification: Validates that if all backend paths fail (e.g. exception from BridgeService),
+     * the controller returns a 503 Service Unavailable and a structured status.
+     */
+    @Test
+    void testTotalSystemOutage_Returns503() throws Exception {
+        when(bridgeService.infer(anyFloat(), anyString(), anyString(), any()))
+            .thenThrow(new RuntimeException("Both Triton and Dynamo are down"));
+
+        InferenceRequest request = new InferenceRequest("user-123", "simple", 10.0f, true);
+
+        mockMvc.perform(post("/infer")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("BACKEND_OUTAGE"))
+                .andExpect(jsonPath("$.prediction").value(0.0));
+    }
+
     // Helper for Mockito to match nulls
     private <T> T isNull() {
         return Mockito.argThat(x -> x == null);

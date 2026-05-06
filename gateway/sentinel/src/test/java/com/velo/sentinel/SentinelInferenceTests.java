@@ -41,6 +41,7 @@ public class SentinelInferenceTests {
     private DynamoGrpcClient dynamoGrpcClient;
     private MeterRegistry meterRegistry;
     private Tracer tracer;
+    private org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @BeforeEach
     void setup() {
@@ -48,7 +49,8 @@ public class SentinelInferenceTests {
         dynamoGrpcClient = mock(DynamoGrpcClient.class);
         meterRegistry = new SimpleMeterRegistry();
         tracer = mock(Tracer.class);
-        cacheRegistry = mock(KVCacheRegistry.class);
+        redisTemplate = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
+        cacheRegistry = new KVCacheRegistry(redisTemplate);
         adaptiveBatcher = new AdaptiveBatcher();
 
         // Mock Tracer to avoid NPEs
@@ -63,6 +65,10 @@ public class SentinelInferenceTests {
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
         bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer);
+
+        // Manually initialize @Value fields for unit tests
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
+        setField(bridgeService, "latencyThresholdMs", 1000.0);
 
         setupTritonMock(10.0f);
     }
@@ -98,6 +104,29 @@ public class SentinelInferenceTests {
         when(dynamoGrpcClient.callDynamo(5.0f, "test-session", "simple")).thenReturn(15.0f);
         float result = bridgeService.infer(5.0f, "test-session", "simple");
         assertThat(result).isEqualTo(15.0f);
+    }
+
+    /**
+     * Workflow: Redis Outage Resilience.
+     * Verification: Confirms that if the Redis KV-Cache registry is down, 
+     * the gateway "Fails-Open" to a Cold Start (assume session is not warm) 
+     * and continues inference instead of failing the request.
+     */
+    @Test
+    void testRoutingModeDynamo_RedisFailure() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
+        
+        // Simulate Redis Connection Error
+        when(redisTemplate.hasKey(anyString())).thenThrow(new RuntimeException("Redis Connection Refused"));
+        
+        // Mock Dynamo Success
+        when(dynamoGrpcClient.callDynamo(5.0f, "test-session", "simple")).thenReturn(15.0f);
+        
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
+        
+        // Should succeed by defaulting to Cold Start
+        assertThat(result).isEqualTo(15.0f);
+        verify(dynamoGrpcClient).callDynamo(5.0f, "test-session", "simple");
     }
 
     /**
@@ -141,6 +170,31 @@ public class SentinelInferenceTests {
 
         float result = bridgeService.infer(5.0f, "test-session", "simple");
         assertThat(result).isEqualTo(10.0f);
+    }
+
+    /**
+     * Workflow: SLO Veto (DYNAMO Mode).
+     * Verification: Confirms that in DYNAMO mode, if the request exceeds 
+     * the latency threshold, the gateway "Vetoes" the Dynamo path and 
+     * falls back to Triton to protect P99 latency.
+     */
+    @Test
+    void testRoutingModeDynamo_SLOVeto() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
+        setField(bridgeService, "latencyThresholdMs", 50.0);
+        setupTritonMock(10.0f);
+        
+        // Simulate a slow Dynamo backend (exceeds 50ms)
+        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenAnswer(inv -> {
+            Thread.sleep(200);
+            return 15.0f;
+        });
+
+        float result = bridgeService.infer(5.0f, "test-session", "simple");
+
+        // Should fall back to Triton (10.0)
+        assertThat(result).isEqualTo(10.0f);
+        verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
     }
 
     /**
