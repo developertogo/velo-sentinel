@@ -43,8 +43,8 @@ public class DynamoBackendTests {
 
         dynamoBackend.infer(1.0f, sessionId);
         
-        // Verify it marked session as active
-        verify(mockCacheRegistry).markSessionActive(sessionId);
+        // Verify it marked session as active on the internal backend node
+        verify(mockCacheRegistry).markSessionActive(eq(sessionId), anyString());
 
         // Simulate subsequent WARM state
         when(mockCacheRegistry.isSessionWarm(sessionId)).thenReturn(true);

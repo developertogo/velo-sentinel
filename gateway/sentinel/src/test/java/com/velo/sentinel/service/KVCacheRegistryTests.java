@@ -55,14 +55,14 @@ public class KVCacheRegistryTests {
 
         String sessionId = "test-user-01";
         assertThat(cacheRegistry.isSessionWarm(sessionId)).isFalse();
-        cacheRegistry.markSessionActive(sessionId);
+        cacheRegistry.markSessionActive(sessionId, "node-1");
         assertThat(cacheRegistry.isSessionWarm(sessionId)).isTrue();
     }
 
     @Test
     void testAnonymousSessionIsAlwaysCold() {
         assertThat(cacheRegistry.isSessionWarm("anonymous")).isFalse();
-        cacheRegistry.markSessionActive("anonymous");
+        cacheRegistry.markSessionActive("anonymous", "node-1");
         assertThat(cacheRegistry.isSessionWarm("anonymous")).isFalse();
     }
 
@@ -81,7 +81,7 @@ public class KVCacheRegistryTests {
     @Test
     void testNullSessionIdIsAlwaysCold() {
         assertThat(cacheRegistry.isSessionWarm(null)).isFalse();
-        cacheRegistry.markSessionActive(null);
+        cacheRegistry.markSessionActive(null, "node-1");
         assertThat(cacheRegistry.isSessionWarm(null)).isFalse();
     }
 
@@ -95,25 +95,28 @@ public class KVCacheRegistryTests {
         KVCacheRegistry failureRegistry = new KVCacheRegistry(mockTemplate);
         
         // This should not throw an exception
-        failureRegistry.markSessionActive("some-session");
+        failureRegistry.markSessionActive("some-session", "node-1");
     }
 
     @Test
     void testSessionWarmthSuccessMock() {
         StringRedisTemplate mockTemplate = mock(StringRedisTemplate.class);
-        when(mockTemplate.hasKey(anyString())).thenReturn(true);
+        org.springframework.data.redis.core.ValueOperations<String, String> mockOps = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(mockTemplate.opsForValue()).thenReturn(mockOps);
+        when(mockOps.get(anyString())).thenReturn("node-1");
+        
         KVCacheRegistry mockRegistry = new KVCacheRegistry(mockTemplate);
         assertThat(mockRegistry.isSessionWarm("test-session")).isTrue();
     }
 
     @Test
-    void testMarkSessionActiveSuccessMock() {
-        StringRedisTemplate mockTemplate = mock(StringRedisTemplate.class);
-        org.springframework.data.redis.core.ValueOperations<String, String> mockOps = mock(org.springframework.data.redis.core.ValueOperations.class);
-        when(mockTemplate.opsForValue()).thenReturn(mockOps);
-        KVCacheRegistry mockRegistry = new KVCacheRegistry(mockTemplate);
+    void testGetWorkerAffinity() {
+        if (redisServer == null || !redisServer.isActive()) return;
+
+        String sessionId = "test-affinity-user";
+        assertThat(cacheRegistry.getWorkerAffinity(sessionId)).isNull();
         
-        mockRegistry.markSessionActive("test-session");
-        verify(mockOps, times(1)).set(eq("sentinel:session:test-session"), eq("WARM"), any(java.time.Duration.class));
+        cacheRegistry.markSessionActive(sessionId, "gpu-worker-42");
+        assertThat(cacheRegistry.getWorkerAffinity(sessionId)).isEqualTo("gpu-worker-42");
     }
 }

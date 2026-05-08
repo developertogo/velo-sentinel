@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Function;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import jakarta.annotation.PreDestroy;
 
 /**
@@ -27,10 +29,16 @@ public class AdaptiveBatcher {
     private final int maxBatchSize = 16;
     private final long maxWaitMs = 5; // 5ms window for batching
     
-    // SLA-Aware Earliest Deadline First Queue
-    private final BlockingQueue<InferenceTask> queue = new PriorityBlockingQueue<>();
+    // Disaggregated Queues: Prefill (Compute-Bound) vs Decode (Memory-Bound)
+    private final BlockingQueue<InferenceTask> prefillQueue = new PriorityBlockingQueue<>();
+    private final BlockingQueue<InferenceTask> decodeQueue = new PriorityBlockingQueue<>();
+    
+    // Sticky Cache: Track which session belongs to which backend "affinity key"
+    private final Map<String, String> sessionAffinity = new ConcurrentHashMap<>();
+    
     private final ExecutorService scheduler = Executors.newVirtualThreadPerTaskExecutor();
-    private final Thread batcherThread;
+    private final Thread prefillThread;
+    private final Thread decodeThread;
     private final MeterRegistry meterRegistry;
     private volatile boolean shuttingDown = false;
 
@@ -38,20 +46,24 @@ public class AdaptiveBatcher {
         this.meterRegistry = meterRegistry;
         
         // Register Backpressure Gauges for HPA Scaling
-        meterRegistry.gauge("velo.sentinel.backpressure.queue_depth", queue, BlockingQueue::size);
-        meterRegistry.gauge("velo.sentinel.backpressure.sla_headroom_ms", this, AdaptiveBatcher::calculateSlaHeadroom);
+        meterRegistry.gauge("velo.sentinel.backpressure.prefill_depth", prefillQueue, BlockingQueue::size);
+        meterRegistry.gauge("velo.sentinel.backpressure.decode_depth", decodeQueue, BlockingQueue::size);
+        meterRegistry.gauge("velo.sentinel.backpressure.affinity_cache_size", sessionAffinity, Map::size);
 
-        // Start the background batch processing loop
-        this.batcherThread = Thread.ofVirtual().name("sentinel-batcher").start(this::processLoop);
+        // Start the disaggregated background processing loops
+        this.prefillThread = Thread.ofVirtual().name("sentinel-prefill-batcher").start(() -> processLoop(prefillQueue, 32, 10, "PREFILL"));
+        this.decodeThread = Thread.ofVirtual().name("sentinel-decode-batcher").start(() -> processLoop(decodeQueue, 8, 2, "DECODE"));
     }
 
     @PreDestroy
     public void shutdown() {
-        log.info("SHUTDOWN: AdaptiveBatcher draining queue ({} items remaining)...", queue.size());
+        log.info("SHUTDOWN: AdaptiveBatcher draining queues...");
         this.shuttingDown = true;
-        this.batcherThread.interrupt();
+        this.prefillThread.interrupt();
+        this.decodeThread.interrupt();
         try {
-            this.batcherThread.join(TimeUnit.SECONDS.toMillis(5));
+            this.prefillThread.join(TimeUnit.SECONDS.toMillis(5));
+            this.decodeThread.join(TimeUnit.SECONDS.toMillis(5));
             log.info("SHUTDOWN: AdaptiveBatcher gracefully terminated.");
         } catch (InterruptedException e) {
             log.warn("SHUTDOWN: Batcher termination interrupted.");
@@ -70,40 +82,44 @@ public class AdaptiveBatcher {
      * @return A CompletableFuture that resolves when the batch is processed.
      */
     public CompletableFuture<Float> submit(float value, String sessionId, String modelName, PriorityTier priority,
-                                          Function<List<BatchItem>, List<Float>> batchProcessor) {
+                                          boolean isPrefill, Function<List<BatchItem>, List<Float>> batchProcessor) {
         CompletableFuture<Float> future = new CompletableFuture<>();
         long deadline = System.currentTimeMillis() + priority.getSlaMs();
-        queue.add(new InferenceTask(new BatchItem(value, sessionId, modelName), future, batchProcessor, deadline, priority));
+        
+        InferenceTask task = new InferenceTask(
+            new BatchItem(value, sessionId, modelName, isPrefill), 
+            future, batchProcessor, deadline, priority
+        );
+
+        if (isPrefill) {
+            prefillQueue.add(task);
+        } else {
+            decodeQueue.add(task);
+        }
+        
         return future;
     }
 
     /**
-     * Submits a request with default INTERACTIVE priority.
+     * Submits a request with default INTERACTIVE priority and auto-detected prefill status.
      */
     public CompletableFuture<Float> submit(float value, String sessionId, String modelName, 
                                           Function<List<BatchItem>, List<Float>> batchProcessor) {
-        return submit(value, sessionId, modelName, PriorityTier.INTERACTIVE, batchProcessor);
+        // Default to prefill if not specified (safest) or use a specialized submit
+        return submit(value, sessionId, modelName, PriorityTier.INTERACTIVE, true, batchProcessor);
     }
 
-    private void processLoop() {
-        while (!Thread.currentThread().isInterrupted() || (!queue.isEmpty() && shuttingDown)) {
+    private void processLoop(BlockingQueue<InferenceTask> targetQueue, int batchSize, long waitMs, String type) {
+        while (!Thread.currentThread().isInterrupted() || (!targetQueue.isEmpty() && shuttingDown)) {
             List<InferenceTask> batch = new ArrayList<>();
             try {
-                // Wait for the first item (adjust timeout if shutting down to drain fast)
-                InferenceTask first = queue.poll(shuttingDown ? 10 : 1000, TimeUnit.MILLISECONDS);
+                InferenceTask first = targetQueue.poll(shuttingDown ? 10 : 1000, TimeUnit.MILLISECONDS);
                 if (first == null) {
-                    if (shuttingDown) break; // Queue drained
+                    if (shuttingDown) break;
                     continue;
                 }
                 
-                // SLA Veto Logic
                 if (System.currentTimeMillis() > first.deadline()) {
-                    try {
-                        InferenceContext.runInContext(first.item().sessionId(), () -> {
-                            log.warn("SLA-VETO: Task exceeded deadline. Dropping.");
-                            return null;
-                        });
-                    } catch (Exception e) {}
                     first.future().completeExceptionally(new TimeoutException("SLA Violated (Deadline passed)"));
                     continue;
                 }
@@ -111,19 +127,11 @@ public class AdaptiveBatcher {
                 batch.add(first);
                 long startTime = System.currentTimeMillis();
 
-                // Try to fill the batch until maxBatchSize or maxWaitMs is reached
-                while (batch.size() < maxBatchSize && (System.currentTimeMillis() - startTime) < maxWaitMs) {
-                    InferenceTask next = queue.poll(maxWaitMs / 2, TimeUnit.MILLISECONDS);
+                while (batch.size() < batchSize && (System.currentTimeMillis() - startTime) < waitMs) {
+                    InferenceTask next = targetQueue.poll(waitMs / 2, TimeUnit.MILLISECONDS);
                     if (next != null) {
                         if (System.currentTimeMillis() > next.deadline()) {
-                            try {
-                                InferenceContext.runInContext(next.item().sessionId(), () -> {
-                                    log.warn("SLA-VETO: Task exceeded deadline. Dropping.");
-                                    return null;
-                                });
-                            } catch (Exception e) {}
                             next.future().completeExceptionally(new TimeoutException("SLA Violated (Deadline passed)"));
-                            // Do not add to batch, continue filling
                         } else {
                             batch.add(next);
                         }
@@ -132,14 +140,14 @@ public class AdaptiveBatcher {
                     }
                 }
 
-                log.debug("BATCHER: Executing batch of size {}.", batch.size());
+                log.debug("BATCHER [{}]: Executing batch of size {}.", type, batch.size());
                 executeBatch(batch);
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                log.error("BATCHER-ERROR: Failed to process batch.", e);
+                log.error("BATCHER-ERROR [{}]: Failed to process batch.", type, e);
             }
         }
     }
@@ -167,18 +175,20 @@ public class AdaptiveBatcher {
     }
 
     /**
-     * Calculates the minimum headroom (ms) before any task in the queue breaches its SLA.
-     * Returns a large value (10000ms) if the queue is empty.
+     * Calculates the minimum headroom (ms) across all queues.
      */
     private double calculateSlaHeadroom() {
-        InferenceTask task = queue.peek();
-        if (task == null) return 10000.0;
+        InferenceTask pTask = prefillQueue.peek();
+        InferenceTask dTask = decodeQueue.peek();
         
         long now = System.currentTimeMillis();
-        return (double) Math.max(0, task.deadline() - now);
+        long pDeadline = (pTask != null) ? pTask.deadline() : now + 10000;
+        long dDeadline = (dTask != null) ? dTask.deadline() : now + 10000;
+        
+        return (double) Math.max(0, Math.min(pDeadline, dDeadline) - now);
     }
 
-    public record BatchItem(float value, String sessionId, String modelName) {}
+    public record BatchItem(float value, String sessionId, String modelName, boolean isPrefill) {}
     
     private record InferenceTask(BatchItem item, CompletableFuture<Float> future, 
                                Function<List<BatchItem>, List<Float>> processor,
@@ -188,5 +198,17 @@ public class AdaptiveBatcher {
             // Earliest Deadline First (EDF)
             return Long.compare(this.deadline, other.deadline);
         }
+    }
+
+    public double getBackpressureFactor() {
+        int prefillSize = prefillQueue.size();
+        int decodeSize = decodeQueue.size();
+        // Weighted backpressure factor: Prefill depth is more expensive
+        return (prefillSize * 2.0 + decodeSize) / 10.0;
+    }
+
+    public double getConcurrencyScore() {
+        // Rough score based on active slots relative to soft limit
+        return (double) (prefillQueue.size() + decodeQueue.size()) / 64.0;
     }
 }

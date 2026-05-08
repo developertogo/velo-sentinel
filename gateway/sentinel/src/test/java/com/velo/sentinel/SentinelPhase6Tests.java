@@ -40,6 +40,7 @@ public class SentinelPhase6Tests {
         @Bean @Primary public MetalBackend metalBackend() { return mock(MetalBackend.class); }
         @Bean @Primary public SpeculativeOrchestrator speculativeOrchestrator() { return mock(SpeculativeOrchestrator.class); }
         @Bean @Primary public com.velo.sentinel.service.AdaptiveBatcher adaptiveBatcher() { return mock(com.velo.sentinel.service.AdaptiveBatcher.class); }
+        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { return mock(com.velo.sentinel.service.KVCacheRegistry.class); }
     }
 
     @BeforeEach
@@ -72,7 +73,7 @@ public class SentinelPhase6Tests {
 
     @Test
     void testQuantizationAwareRouting_PassesPrecision() {
-        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), any()))
+        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), anyBoolean(), any()))
             .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(99.0f));
 
         // Just verify it doesn't crash and flows through

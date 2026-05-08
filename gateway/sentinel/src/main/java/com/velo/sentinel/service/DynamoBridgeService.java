@@ -48,6 +48,7 @@ public class DynamoBridgeService implements InferenceBackend {
   private final RequestThrottler throttler;
   private final DriftMonitor driftMonitor;
   private final ChaosComponent chaosComponent;
+  private final KVCacheRegistry kvCacheRegistry;
 
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
@@ -78,7 +79,8 @@ public class DynamoBridgeService implements InferenceBackend {
       Tracer tracer,
       RequestThrottler throttler,
       DriftMonitor driftMonitor,
-      ChaosComponent chaosComponent) {
+      ChaosComponent chaosComponent,
+      KVCacheRegistry kvCacheRegistry) {
     this.tritonBackend = tritonBackend;
     this.dynamoBackend = dynamoBackend;
     this.metalBackend = metalBackend;
@@ -90,6 +92,7 @@ public class DynamoBridgeService implements InferenceBackend {
     this.throttler = throttler;
     this.driftMonitor = driftMonitor;
     this.chaosComponent = chaosComponent;
+    this.kvCacheRegistry = kvCacheRegistry;
   }
 
   /**
@@ -300,12 +303,19 @@ public class DynamoBridgeService implements InferenceBackend {
 
   private float routeToDynamo(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
     try {
-      return adaptiveBatcher.submit(value, sessionId, modelName, priority, items -> {
+      boolean isWarm = kvCacheRegistry.isSessionWarm(sessionId);
+      boolean isPrefill = !isWarm;
+      
+      log.debug("DISAGGREGATED-SERVING [Session: {}]: Phase identified as {}.", 
+          sessionId, isPrefill ? "PREFILL" : "DECODE");
+
+      float result = adaptiveBatcher.submit(value, sessionId, modelName, priority, isPrefill, items -> {
         return items.stream()
             .map(item -> {
                 try {
                     return InferenceContext.runInContext(item.sessionId(), () -> {
-                        // CHAOS: Inject failure/latency before the actual call
+                        // DISAGGREGATED-ROUTING: In a real cluster, we would pick a specific backend pool here.
+                        // For this orchestration proof, we ensure separate queueing and metrics.
                         chaosComponent.maybeInjectChaos(item.modelName());
                         return resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName());
                     });
@@ -315,6 +325,11 @@ public class DynamoBridgeService implements InferenceBackend {
             })
             .toList();
       }).get((long) latencyThresholdMs, TimeUnit.MILLISECONDS);
+
+      // Successfully processed -> Mark session as Warm in the distributed registry with node affinity
+      kvCacheRegistry.markSessionActive(sessionId, "dynamo-worker-1");
+      return result;
+
     } catch (Exception e) {
       log.warn("SLO-VETO [Model: {}]: Dynamo path exceeded {}ms or failed. Falling back to Triton to protect P99. Reason: {}", 
           modelName, latencyThresholdMs, e.getMessage());

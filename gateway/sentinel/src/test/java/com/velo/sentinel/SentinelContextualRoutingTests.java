@@ -36,6 +36,7 @@ public class SentinelContextualRoutingTests {
         @Bean @Primary public TritonBackend tritonBackend() { return mock(TritonBackend.class); }
         @Bean @Primary public AdaptiveBatcher adaptiveBatcher() { return mock(AdaptiveBatcher.class); }
         @Bean @Primary public ChaosComponent chaosComponent() { return mock(ChaosComponent.class); }
+        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { return mock(com.velo.sentinel.service.KVCacheRegistry.class); }
     }
 
     @BeforeEach
@@ -59,14 +60,14 @@ public class SentinelContextualRoutingTests {
     @Test
     void testContextualRouting_HighComplexity_RoutesToDynamo() throws Exception {
         // Mock Dynamo/Batcher to return 0.5
-        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), any()))
+        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), anyBoolean(), any()))
             .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(0.5f));
 
         // High complexity (100 >= 50) -> Should route to Dynamo (default mode)
         float result = bridgeService.infer(5.0f, "high-comp-session", "simple", null, 100);
 
         assertThat(result).isEqualTo(0.5f);
-        verify(adaptiveBatcher, times(1)).submit(anyFloat(), anyString(), anyString(), any(), any());
+        verify(adaptiveBatcher, times(1)).submit(anyFloat(), anyString(), anyString(), any(), anyBoolean(), any());
         verifyNoInteractions(tritonBackend); // Should NOT hit Triton directly
     }
 }

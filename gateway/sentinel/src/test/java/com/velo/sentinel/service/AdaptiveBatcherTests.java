@@ -30,16 +30,16 @@ public class AdaptiveBatcherTests {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger callCount = new AtomicInteger(0);
 
-        // Submit 3 requests
-        CompletableFuture<Float> f1 = batcher.submit(1.0f, "s1", "m1", items -> {
+        // Submit 3 requests (Prefill path)
+        CompletableFuture<Float> f1 = batcher.submit(1.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             callCount.incrementAndGet();
             return items.stream().map(i -> i.value() * 2).toList();
         });
-        CompletableFuture<Float> f2 = batcher.submit(2.0f, "s2", "m1", items -> {
+        CompletableFuture<Float> f2 = batcher.submit(2.0f, "s2", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             callCount.incrementAndGet();
             return items.stream().map(i -> i.value() * 2).toList();
         });
-        CompletableFuture<Float> f3 = batcher.submit(3.0f, "s3", "m1", items -> {
+        CompletableFuture<Float> f3 = batcher.submit(3.0f, "s3", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             callCount.incrementAndGet();
             return items.stream().map(i -> i.value() * 2).toList();
         });
@@ -57,8 +57,8 @@ public class AdaptiveBatcherTests {
     void testBatcherTimeout() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         
-        // Submit only 1 request (won't hit maxBatchSize=16)
-        CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", items -> {
+        // Submit only 1 request (won't hit maxBatchSize=32 for prefill)
+        CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             return items.stream().map(i -> i.value() * 10).toList();
         });
 
@@ -70,7 +70,7 @@ public class AdaptiveBatcherTests {
     void testBatchProcessorFailure() {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         
-        CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", items -> {
+        CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             throw new RuntimeException("Backend Down");
         });
 
@@ -85,7 +85,7 @@ public class AdaptiveBatcherTests {
 
         for (int i = 0; i < taskCount; i++) {
             float val = (float) i;
-            futures.add(batcher.submit(val, "session-" + i, "model", items -> {
+            futures.add(batcher.submit(val, "session-" + i, "model", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
                 log.info("Processing batch of size {}", items.size());
                 return items.stream().map(item -> item.value() + 1).toList();
             }));
@@ -106,8 +106,8 @@ public class AdaptiveBatcherTests {
         // A BACKGROUND task has +5000ms deadline. REALTIME has +100ms. REALTIME should be pulled first.
         
         // Let's submit them fast
-        CompletableFuture<Float> bg = batcher.submit(1.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.BACKGROUND, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
-        CompletableFuture<Float> rt = batcher.submit(2.0f, "s2", "m1", com.velo.sentinel.model.PriorityTier.REALTIME, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
+        CompletableFuture<Float> bg = batcher.submit(1.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.BACKGROUND, true, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
+        CompletableFuture<Float> rt = batcher.submit(2.0f, "s2", "m1", com.velo.sentinel.model.PriorityTier.REALTIME, true, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
 
         assertThat(rt.get(1, TimeUnit.SECONDS)).isEqualTo(2.0f);
         assertThat(bg.get(1, TimeUnit.SECONDS)).isEqualTo(1.0f);
@@ -117,11 +117,11 @@ public class AdaptiveBatcherTests {
     void testMaxBatchSizeTriggersExecution() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger batchCount = new AtomicInteger(0);
-        int totalTasks = 32; // Exactly 2 batches of 16
+        int totalTasks = 64; // Exactly 2 batches of 32 for prefill queue
         
         List<CompletableFuture<Float>> futures = new ArrayList<>();
         for (int i = 0; i < totalTasks; i++) {
-            futures.add(batcher.submit((float)i, "s", "m", items -> {
+            futures.add(batcher.submit((float)i, "s", "m", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
                 batchCount.incrementAndGet();
                 return items.stream().map(it -> it.value()).toList();
             }));
