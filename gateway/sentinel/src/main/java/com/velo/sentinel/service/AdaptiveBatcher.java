@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -30,9 +31,16 @@ public class AdaptiveBatcher {
     private final BlockingQueue<InferenceTask> queue = new PriorityBlockingQueue<>();
     private final ExecutorService scheduler = Executors.newVirtualThreadPerTaskExecutor();
     private final Thread batcherThread;
+    private final MeterRegistry meterRegistry;
     private volatile boolean shuttingDown = false;
 
-    public AdaptiveBatcher() {
+    public AdaptiveBatcher(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+        
+        // Register Backpressure Gauges for HPA Scaling
+        meterRegistry.gauge("velo.sentinel.backpressure.queue_depth", queue, BlockingQueue::size);
+        meterRegistry.gauge("velo.sentinel.backpressure.sla_headroom_ms", this, AdaptiveBatcher::calculateSlaHeadroom);
+
         // Start the background batch processing loop
         this.batcherThread = Thread.ofVirtual().name("sentinel-batcher").start(this::processLoop);
     }
@@ -156,6 +164,18 @@ public class AdaptiveBatcher {
         } catch (Exception e) {
             tasks.forEach(t -> t.future().completeExceptionally(e));
         }
+    }
+
+    /**
+     * Calculates the minimum headroom (ms) before any task in the queue breaches its SLA.
+     * Returns a large value (10000ms) if the queue is empty.
+     */
+    private double calculateSlaHeadroom() {
+        InferenceTask task = queue.peek();
+        if (task == null) return 10000.0;
+        
+        long now = System.currentTimeMillis();
+        return (double) Math.max(0, task.deadline() - now);
     }
 
     public record BatchItem(float value, String sessionId, String modelName) {}
