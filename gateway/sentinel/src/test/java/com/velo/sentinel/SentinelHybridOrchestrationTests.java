@@ -3,6 +3,8 @@ package com.velo.sentinel;
 import com.velo.sentinel.backend.MetalBackend;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.SpeculativeOrchestrator;
+import com.velo.sentinel.service.SemanticCacheService;
+import com.velo.sentinel.service.KVCacheRegistry;
 import com.velo.sentinel.model.ModelPrecision;
 import com.velo.sentinel.model.PriorityTier;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +23,7 @@ import static org.mockito.Mockito.*;
 @SpringBootTest(properties = {
     "velo.sentinel.routing-mode=DYNAMO"
 })
-public class SentinelPhase6Tests {
+public class SentinelHybridOrchestrationTests {
 
     @Autowired
     private DynamoBridgeService bridgeService;
@@ -40,7 +42,16 @@ public class SentinelPhase6Tests {
         @Bean @Primary public MetalBackend metalBackend() { return mock(MetalBackend.class); }
         @Bean @Primary public SpeculativeOrchestrator speculativeOrchestrator() { return mock(SpeculativeOrchestrator.class); }
         @Bean @Primary public com.velo.sentinel.service.AdaptiveBatcher adaptiveBatcher() { return mock(com.velo.sentinel.service.AdaptiveBatcher.class); }
-        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { return mock(com.velo.sentinel.service.KVCacheRegistry.class); }
+        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { 
+            com.velo.sentinel.service.KVCacheRegistry registry = mock(com.velo.sentinel.service.KVCacheRegistry.class);
+            when(registry.isSessionWarm(anyString())).thenReturn(false);
+            return registry;
+        }
+        @Bean @Primary public com.velo.sentinel.service.SemanticCacheService semanticCacheService() { 
+            com.velo.sentinel.service.SemanticCacheService mockCache = mock(com.velo.sentinel.service.SemanticCacheService.class);
+            when(mockCache.checkCache(anyString())).thenReturn(null);
+            return mockCache;
+        }
     }
 
     @BeforeEach

@@ -49,6 +49,7 @@ public class DynamoBridgeService implements InferenceBackend {
   private final DriftMonitor driftMonitor;
   private final ChaosComponent chaosComponent;
   private final KVCacheRegistry kvCacheRegistry;
+  private final SemanticCacheService semanticCache;
 
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
@@ -80,7 +81,8 @@ public class DynamoBridgeService implements InferenceBackend {
       RequestThrottler throttler,
       DriftMonitor driftMonitor,
       ChaosComponent chaosComponent,
-      KVCacheRegistry kvCacheRegistry) {
+      KVCacheRegistry kvCacheRegistry,
+      SemanticCacheService semanticCache) {
     this.tritonBackend = tritonBackend;
     this.dynamoBackend = dynamoBackend;
     this.metalBackend = metalBackend;
@@ -93,6 +95,7 @@ public class DynamoBridgeService implements InferenceBackend {
     this.driftMonitor = driftMonitor;
     this.chaosComponent = chaosComponent;
     this.kvCacheRegistry = kvCacheRegistry;
+    this.semanticCache = semanticCache;
   }
 
   /**
@@ -115,7 +118,7 @@ public class DynamoBridgeService implements InferenceBackend {
   /**
    * Executes inference for a specific session with a default model.
    * 
-   * @param value The input value for prediction.
+   * @param value     The input value for prediction.
    * @param sessionId The unique identifier for the user session.
    * @param modelName The name of the model to use.
    * @return The predicted value from the chosen backend.
@@ -124,29 +127,33 @@ public class DynamoBridgeService implements InferenceBackend {
   public float infer(float value, String sessionId, String modelName) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     try {
-        return InferenceContext.runInContext(safeSession, () -> orchestrateInference(value, safeSession, modelName, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16, false));
+      return InferenceContext.runInContext(safeSession, () -> orchestrateInference(value, safeSession, modelName,
+          PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16, false));
     } catch (Exception e) {
-        throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
+      throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
     }
   }
 
   @Override
   public float infer(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
-      return sentinelExecute(value, sessionId, modelName, priority, complexity, ModelPrecision.FP16, false);
+    return sentinelExecute(value, sessionId, modelName, priority, complexity, ModelPrecision.FP16, false);
   }
 
   @Override
-  public float infer(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision) {
-      return sentinelExecute(value, sessionId, modelName, priority, complexity, precision, false);
+  public float infer(float value, String sessionId, String modelName, PriorityTier priority, int complexity,
+      ModelPrecision precision) {
+    return sentinelExecute(value, sessionId, modelName, priority, complexity, precision, false);
   }
 
   @Override
-  public float sentinelExecute(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
+  public float sentinelExecute(float value, String sessionId, String modelName, PriorityTier priority, int complexity,
+      ModelPrecision precision, boolean useAgenticOptimization) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     try {
-        return InferenceContext.runInContext(safeSession, () -> orchestrateInference(value, safeSession, modelName, priority, complexity, precision, useAgenticOptimization));
+      return InferenceContext.runInContext(safeSession, () -> orchestrateInference(value, safeSession, modelName,
+          priority, complexity, precision, useAgenticOptimization));
     } catch (Exception e) {
-        throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
+      throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
     }
   }
 
@@ -154,127 +161,156 @@ public class DynamoBridgeService implements InferenceBackend {
    * The core inference orchestration logic.
    * Handles tracing, metrics, and routing based on the current RoutingMode.
    * 
-   * @param value The input value.
+   * @param value     The input value.
    * @param sessionId The session ID.
    * @param modelName The model name.
-   * @param priority The priority tier (SLA aware).
+   * @param priority  The priority tier (SLA aware).
    * @return The final prediction.
    */
-  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
-    RoutingMode effectiveMode = routingMode;
-    
-    // HYBRID-ROUTING: Offload small or "privacy-sensitive" prompts to local M3 (Metal)
+  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority,
+      int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
     if (sessionId.startsWith("private-")) {
-        log.info("HYBRID-ROUTING [Session: {}]: Request is local-eligible. Offloading to M3 GPU (Metal).", sessionId);
-        return metalBackend.infer(value, sessionId, modelName);
+      log.info("HYBRID-ROUTING [Session: {}]: Request is local-eligible. Offloading to M3 GPU (Metal).", sessionId);
+      return metalBackend.infer(value, sessionId, modelName);
+    }
+
+    // Semantic Cache Check
+    String promptKey = (modelName != null ? modelName : "unknown") + ":" + value;
+    Float cachedResult = semanticCache != null ? semanticCache.checkCache(promptKey) : null;
+    if (cachedResult != null) {
+      log.info("CACHE-HIT [Model: {}]: Returning result from semantic cache.", modelName);
+      return cachedResult;
+    }
+
+    RoutingMode effectiveMode = routingMode;
+
+    // HYBRID-ROUTING: Offload small or "privacy-sensitive" prompts to local M3
+    // (Metal)
+    if (sessionId.startsWith("private-")) {
+      log.info("HYBRID-ROUTING [Session: {}]: Request is local-eligible. Offloading to M3 GPU (Metal).", sessionId);
+      return metalBackend.infer(value, sessionId, modelName);
     }
 
     // SPECULATIVE-DECODING: Orchestrate local M3 Drafter + Cloud Target
     if (useAgenticOptimization && effectiveMode == RoutingMode.DYNAMO) {
-        log.info("SPECULATIVE-DECODING [Session: {}]: Speculative mode active. Orchestrating Drafter/Target.", sessionId);
-        return speculativeOrchestrator.executeSpeculative(value, sessionId, modelName, dynamoBackend);
+      log.info("SPECULATIVE-DECODING [Session: {}]: Speculative mode active. Orchestrating Drafter/Target.", sessionId);
+      return speculativeOrchestrator.executeSpeculative(value, sessionId, modelName, dynamoBackend);
     }
 
     // CONTEXTUAL-ROUTING: If complexity is low, force TRITON to save cost
     if (complexity < 50 && complexity > 0) {
-        log.info("CONTEXTUAL-ROUTING [Session: {}]: Complexity {} is below threshold (50). Routing to Efficiency Node (TRITON).", 
-            sessionId, complexity);
-        effectiveMode = RoutingMode.TRITON;
+      log.info(
+          "CONTEXTUAL-ROUTING [Session: {}]: Complexity {} is below threshold (50). Routing to Efficiency Node (TRITON).",
+          sessionId, complexity);
+      effectiveMode = RoutingMode.TRITON;
     }
 
-    // QUANTIZATION-AWARE: Log precision intent (In real scenario, we'd pick a specific model variation)
+    // QUANTIZATION-AWARE: Log precision intent (In real scenario, we'd pick a
+    // specific model variation)
     if (precision != com.velo.sentinel.model.ModelPrecision.FP16) {
-        log.info("QUANTIZATION-AWARE [Session: {}]: Routing to {} optimized backend.", sessionId, precision);
+      log.info("QUANTIZATION-AWARE [Session: {}]: Routing to {} optimized backend.", sessionId, precision);
     }
-    
+
     // SAFETY-SWITCH: If accuracy drift is detected, veto Dynamo and force Triton
     if (driftMonitor.isVetoActive()) {
-        if (effectiveMode != RoutingMode.TRITON) {
-            log.error("SAFETY-VETO: Accuracy drift exceeds safety limits. Overriding {} mode and forcing FAILBACK to TRITON ground truth.", effectiveMode);
-        }
-        effectiveMode = RoutingMode.TRITON;
+      if (effectiveMode != RoutingMode.TRITON) {
+        log.error(
+            "SAFETY-VETO: Accuracy drift exceeds safety limits. Overriding {} mode and forcing FAILBACK to TRITON ground truth.",
+            effectiveMode);
+      }
+      effectiveMode = RoutingMode.TRITON;
     }
 
     final RoutingMode finalMode = effectiveMode;
     return throttler.throttle(sessionId, () -> {
-        Span span = tracer.spanBuilder("VeloInference")
-            .setAttribute("inference.model", modelName)
-            .setAttribute("inference.mode", finalMode.name())
-            .setAttribute("inference.session", sessionId)
-            .setAttribute("inference.priority", priority != null ? priority.name() : "NONE")
-            .startSpan();
+      Span span = tracer.spanBuilder("VeloInference")
+          .setAttribute("inference.model", modelName != null ? modelName : "unknown")
+          .setAttribute("inference.mode", finalMode.name())
+          .setAttribute("inference.session", sessionId)
+          .setAttribute("inference.priority", priority != null ? priority.name() : "NONE")
+          .startSpan();
 
-        try (Scope scope = span.makeCurrent()) {
-          Timer.Sample sample = Timer.start(meterRegistry);
-          try {
-            // Orchestrate with Hedging if enabled
-            if (hedgingEnabled && finalMode != RoutingMode.TRITON) {
-              return executeHedgedInference(value, sessionId, modelName, finalMode, priority, complexity, precision, useAgenticOptimization);
-            }
-
-            float result = switch (finalMode) {
-              case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
-              case SHADOW -> routeShadow(value, sessionId, modelName);
-              case TRITON -> routeToTriton(value, sessionId, modelName);
-              case CANARY -> {
-                  // Deterministic session-based canary split
-                  int bucket = Math.abs(sessionId.hashCode()) % 100;
-                  if (bucket < canaryPercentage) {
-                      log.debug("CANARY-ROUTE: Routing session {} to DYNAMO (Bucket: {})", sessionId, bucket);
-                      yield routeToDynamo(value, sessionId, modelName, priority);
-                  } else {
-                      log.debug("CANARY-ROUTE: Routing session {} to TRITON (Bucket: {})", sessionId, bucket);
-                      yield routeToTriton(value, sessionId, modelName);
-                  }
-              }
-            };
-            sample.stop(meterRegistry.timer("velo.sentinel.inference", "mode", finalMode.name(), "model", modelName));
-            return result;
-          } catch (Exception e) {
-            meterRegistry.counter("velo.sentinel.errors", "mode", finalMode.name(), "model", modelName).increment();
-            span.recordException(e);
-            span.setStatus(StatusCode.ERROR, e.getMessage());
-            throw e;
+      try (Scope scope = span.makeCurrent()) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+          // Orchestrate with Hedging if enabled
+          if (hedgingEnabled && finalMode != RoutingMode.TRITON) {
+            return executeHedgedInference(value, sessionId, modelName, finalMode, priority, complexity, precision,
+                useAgenticOptimization);
           }
-        } finally {
-          span.end();
+
+          float result = switch (finalMode) {
+            case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
+            case SHADOW -> routeShadow(value, sessionId, modelName);
+            case TRITON -> routeToTriton(value, sessionId, modelName);
+            case CANARY -> {
+              // Deterministic session-based canary split
+              int bucket = Math.abs(sessionId.hashCode()) % 100;
+              if (bucket < canaryPercentage) {
+                log.debug("CANARY-ROUTE: Routing session {} to DYNAMO (Bucket: {})", sessionId, bucket);
+                yield routeToDynamo(value, sessionId, modelName, priority);
+              } else {
+                log.debug("CANARY-ROUTE: Routing session {} to TRITON (Bucket: {})", sessionId, bucket);
+                yield routeToTriton(value, sessionId, modelName);
+              }
+            }
+          };
+          sample.stop(meterRegistry.timer("velo.sentinel.inference", "mode", finalMode.name(), "model", modelName));
+
+          // Cache the result
+          if (semanticCache != null) {
+            semanticCache.updateCache(modelName + ":" + value, result);
+          }
+
+          return result;
+        } catch (Exception e) {
+          meterRegistry.counter("velo.sentinel.errors", "mode", finalMode.name(), "model", modelName).increment();
+          span.recordException(e);
+          span.setStatus(StatusCode.ERROR, e.getMessage());
+          throw e;
         }
+      } finally {
+        span.end();
+      }
     });
   }
 
   private float orchestrateInference(float value, String sessionId, String modelName) {
-      return orchestrateInference(value, sessionId, modelName, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16, false);
+    return orchestrateInference(value, sessionId, modelName, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16, false);
   }
 
-  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
-      return orchestrateInference(value, sessionId, modelName, priority, complexity, ModelPrecision.FP16, false);
+  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority,
+      int complexity) {
+    return orchestrateInference(value, sessionId, modelName, priority, complexity, ModelPrecision.FP16, false);
   }
 
-  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision) {
-      return orchestrateInference(value, sessionId, modelName, priority, complexity, precision, false);
+  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority,
+      int complexity, ModelPrecision precision) {
+    return orchestrateInference(value, sessionId, modelName, priority, complexity, precision, false);
   }
 
   /**
    * Hedged Inference: Shaves the tail of the latency distribution.
    * Starts primary, and if it exceeds delayMs, starts a second request.
    */
-  private float executeHedgedInference(float value, String sessionId, String modelName, RoutingMode mode, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
+  private float executeHedgedInference(float value, String sessionId, String modelName, RoutingMode mode,
+      PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
     log.debug("HEDGING-INIT [Session: {}]: Hedging enabled. Delay: {}ms", sessionId, hedgingDelayMs);
 
     CompletableFuture<Float> primary = CompletableFuture.supplyAsync(() -> {
-        return switch (mode) {
-            case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
-            case SHADOW -> routeShadow(value, sessionId, modelName);
-            case CANARY -> {
-                int bucket = Math.abs(sessionId.hashCode()) % 100;
-                if (bucket < canaryPercentage) {
-                    yield routeToDynamo(value, sessionId, modelName, priority);
-                } else {
-                    yield routeToTriton(value, sessionId, modelName);
-                }
-            }
-            default -> routeToTriton(value, sessionId, modelName);
-        };
+      return switch (mode) {
+        case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
+        case SHADOW -> routeShadow(value, sessionId, modelName);
+        case CANARY -> {
+          int bucket = Math.abs(sessionId.hashCode()) % 100;
+          if (bucket < canaryPercentage) {
+            yield routeToDynamo(value, sessionId, modelName, priority);
+          } else {
+            yield routeToTriton(value, sessionId, modelName);
+          }
+        }
+        default -> routeToTriton(value, sessionId, modelName);
+      };
     });
 
     try {
@@ -282,11 +318,11 @@ public class DynamoBridgeService implements InferenceBackend {
       return primary.get((long) hedgingDelayMs, TimeUnit.MILLISECONDS);
     } catch (Exception e) {
       // Primary took too long (or failed). Spawn a hedge!
-      log.warn("HEDGING-TRIGGER [Session: {}]: Primary exceeded {}ms. Spawning hedged request to Triton.", 
+      log.warn("HEDGING-TRIGGER [Session: {}]: Primary exceeded {}ms. Spawning hedged request to Triton.",
           sessionId, hedgingDelayMs);
-      
+
       CompletableFuture<Float> hedge = CompletableFuture.supplyAsync(() -> routeToTriton(value, sessionId, modelName));
-      
+
       // Return the fastest between primary and hedge
       return (float) CompletableFuture.anyOf(primary, hedge).join();
     }
@@ -301,37 +337,34 @@ public class DynamoBridgeService implements InferenceBackend {
     return tritonBackend.infer(value, sessionId, modelName);
   }
 
-  private float routeToDynamo(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
+  private float routeToDynamo(float value, String sessionId, String modelName,
+      com.velo.sentinel.model.PriorityTier priority) {
     try {
-      boolean isWarm = kvCacheRegistry.isSessionWarm(sessionId);
-      boolean isPrefill = !isWarm;
-      
-      log.debug("DISAGGREGATED-SERVING [Session: {}]: Phase identified as {}.", 
-          sessionId, isPrefill ? "PREFILL" : "DECODE");
+      boolean isPrefill = !kvCacheRegistry.isSessionWarm(sessionId);
+      log.debug("DISAGGREGATED-ROUTING [Session: {}]: Type={}", sessionId, isPrefill ? "PREFILL" : "DECODE");
 
-      float result = adaptiveBatcher.submit(value, sessionId, modelName, priority, isPrefill, items -> {
+      return adaptiveBatcher.submit(value, sessionId, modelName, priority, isPrefill, items -> {
         return items.stream()
             .map(item -> {
-                try {
-                    return InferenceContext.runInContext(item.sessionId(), () -> {
-                        // DISAGGREGATED-ROUTING: In a real cluster, we would pick a specific backend pool here.
-                        // For this orchestration proof, we ensure separate queueing and metrics.
-                        chaosComponent.maybeInjectChaos(item.modelName());
-                        return resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName());
-                    });
-                } catch (Exception e) {
-                    throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
-                }
+              try {
+                return InferenceContext.runInContext(item.sessionId(), () -> {
+                  chaosComponent.maybeInjectChaos(item.modelName());
+                  float res = resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName());
+                  // Mark session as warm after successful prefill
+                  if (item.isPrefill()) {
+                    kvCacheRegistry.markSessionActive(item.sessionId());
+                  }
+                  return res;
+                });
+              } catch (Exception e) {
+                throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
+              }
             })
             .toList();
       }).get((long) latencyThresholdMs, TimeUnit.MILLISECONDS);
-
-      // Successfully processed -> Mark session as Warm in the distributed registry with node affinity
-      kvCacheRegistry.markSessionActive(sessionId, "dynamo-worker-1");
-      return result;
-
     } catch (Exception e) {
-      log.warn("SLO-VETO [Model: {}]: Dynamo path exceeded {}ms or failed. Falling back to Triton to protect P99. Reason: {}", 
+      log.warn(
+          "SLO-VETO [Model: {}]: Dynamo path exceeded {}ms or failed. Falling back to Triton to protect P99. Reason: {}",
           modelName, latencyThresholdMs, e.getMessage());
       return routeToTriton(value, sessionId, modelName);
     }
@@ -340,8 +373,9 @@ public class DynamoBridgeService implements InferenceBackend {
   private float routeShadow(float value, String sessionId, String modelName) {
     log.info("SENTINEL-MODE [SHADOW]: Performing side-by-side validation for model {}...", modelName);
 
-    // Phase 1: Get Triton result with a tight, bounded scope.
-    // We do NOT block on Dynamo here — that would add latency to the user-facing response.
+    // Get Triton result with a tight, bounded scope.
+    // We do NOT block on Dynamo here — that would add latency to the user-facing
+    // response.
     final float tritonResult;
     try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll(),
         cfg -> cfg.withTimeout(java.time.Duration.ofMillis((long) latencyThresholdMs)))) {
@@ -356,7 +390,8 @@ public class DynamoBridgeService implements InferenceBackend {
       }
 
       if (tritonTask.state() != StructuredTaskScope.Subtask.State.SUCCESS) {
-        log.error("SHADOW-CRITICAL: Triton (Ground Truth) failed (State: {}). Attempting best-effort Dynamo fallback.", tritonTask.state());
+        log.error("SHADOW-CRITICAL: Triton (Ground Truth) failed (State: {}). Attempting best-effort Dynamo fallback.",
+            tritonTask.state());
         // Triton is the ground truth — if it's down, fall back to Dynamo as best-effort
         // rather than retrying a known-broken backend.
         return resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
@@ -367,24 +402,28 @@ public class DynamoBridgeService implements InferenceBackend {
       return tritonBackend.infer(value, sessionId, modelName);
     }
 
-    // Phase 2: Kick off Dynamo comparison in the background — completely decoupled from the
-    // user response. This guarantees Shadow mode NEVER adds latency to the critical path.
+    // Kick off Dynamo comparison in the background — completely decoupled
+    // from the
+    // user response. This guarantees Shadow mode NEVER adds latency to the critical
+    // path.
     final float capturedResult = tritonResult;
     CompletableFuture.runAsync(() -> {
       try {
         InferenceContext.runInContext(sessionId, () -> {
-            float dynamoResult = resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
-            
-            // RECORD-OBSERVATION: Feed the drift monitor
-            driftMonitor.recordObservation(capturedResult, dynamoResult);
+          float dynamoResult = resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
 
-            float drift = Math.abs(capturedResult - dynamoResult);
-            if (drift > 0.5) {
-                log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, capturedResult, dynamoResult, drift);
-            }
-            DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry).record(drift);
-            meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
-            return null;
+          // RECORD-OBSERVATION: Feed the drift monitor
+          driftMonitor.recordObservation(capturedResult, dynamoResult);
+
+          float drift = Math.abs(capturedResult - dynamoResult);
+          if (drift > 0.5) {
+            log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, capturedResult,
+                dynamoResult, drift);
+          }
+          DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry)
+              .record(drift);
+          meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
+          return null;
         });
       } catch (Exception e) {
         log.warn("SHADOW-VETO [Model: {}]: Dynamo comparison failed asynchronously: {}", modelName, e.getMessage());
@@ -395,4 +434,3 @@ public class DynamoBridgeService implements InferenceBackend {
     return tritonResult;
   }
 }
-
