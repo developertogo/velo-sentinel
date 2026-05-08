@@ -26,35 +26,36 @@ public class KVCacheRegistry {
     }
 
     /**
-     * Checks if a session is currently 'Warm'.
-     * Returns false if Redis is unavailable (Fail-Open to Cold Start).
+     * Checks which worker node hosts the session's KV-Cache.
+     * Returns null if the session is Cold.
      */
-    public boolean isSessionWarm(String sessionId) {
+    public String getWorkerAffinity(String sessionId) {
         if (sessionId == null || sessionId.equals("anonymous")) {
-            return false;
+            return null;
         }
-
         try {
-            Boolean exists = redisTemplate.hasKey(KEY_PREFIX + sessionId);
-            return Boolean.TRUE.equals(exists);
+            return redisTemplate.opsForValue().get(KEY_PREFIX + sessionId);
         } catch (Exception e) {
-            log.warn("REDIS-UNAVAILABLE: Assuming session {} is COLD. Reason: {}", sessionId, e.getMessage());
-            return false;
+            log.warn("REDIS-UNAVAILABLE: Cannot determine affinity for {}.", sessionId);
+            return null;
         }
     }
 
+    public boolean isSessionWarm(String sessionId) {
+        return getWorkerAffinity(sessionId) != null;
+    }
+
     /**
-     * Marks a session as active and refreshes its TTL.
+     * Marks a session as active on a specific worker node.
      */
-    public void markSessionActive(String sessionId) {
+    public void markSessionActive(String sessionId, String workerNodeId) {
         if (sessionId == null || sessionId.equals("anonymous")) {
             return;
         }
-
         try {
-            redisTemplate.opsForValue().set(KEY_PREFIX + sessionId, "WARM", SESSION_TTL);
+            redisTemplate.opsForValue().set(KEY_PREFIX + sessionId, workerNodeId, SESSION_TTL);
         } catch (Exception e) {
-            log.error("REDIS-WRITE-FAILURE: Failed to mark session {} as active.", sessionId);
+            log.error("REDIS-WRITE-FAILURE: Failed to mark session {} on node {}.", sessionId, workerNodeId);
         }
     }
 }

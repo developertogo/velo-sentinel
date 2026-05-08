@@ -42,6 +42,7 @@ public class SentinelHedgingTests {
         @Bean @Primary public TritonBackend tritonBackend() { return mock(TritonBackend.class); }
         @Bean @Primary public AdaptiveBatcher adaptiveBatcher() { return mock(AdaptiveBatcher.class); }
         @Bean @Primary public ChaosComponent chaosComponent() { return mock(ChaosComponent.class); }
+        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { return mock(com.velo.sentinel.service.KVCacheRegistry.class); }
     }
 
     @BeforeEach
@@ -52,7 +53,7 @@ public class SentinelHedgingTests {
     @Test
     void testHedging_PrimarySlow_HedgeSucceeds() throws Exception {
         // Mock Dynamo to be very slow (1 second)
-        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), any())).thenAnswer(inv -> {
+        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), anyBoolean(), any())).thenAnswer(inv -> {
             return CompletableFuture.supplyAsync(() -> {
                 try { Thread.sleep(1000); } catch (InterruptedException e) {}
                 return 0.5f;

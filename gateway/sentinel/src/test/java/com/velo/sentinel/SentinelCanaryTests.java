@@ -53,14 +53,15 @@ public class SentinelCanaryTests {
         });
 
         // Mock adaptiveBatcher.submit to return immediate result
-        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), any())).thenAnswer(inv -> {
+        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), anyBoolean(), any())).thenAnswer(inv -> {
             float val = inv.getArgument(0);
             String session = inv.getArgument(1);
             String model = inv.getArgument(2);
-            java.util.function.Function<List<AdaptiveBatcher.BatchItem>, List<Float>> task = inv.getArgument(4);
+            boolean isPrefill = inv.getArgument(4);
+            java.util.function.Function<List<AdaptiveBatcher.BatchItem>, List<Float>> task = inv.getArgument(5);
             
             return CompletableFuture.supplyAsync(() -> {
-                AdaptiveBatcher.BatchItem item = new AdaptiveBatcher.BatchItem(val, session, model);
+                AdaptiveBatcher.BatchItem item = new AdaptiveBatcher.BatchItem(val, session, model, isPrefill);
                 return task.apply(List.of(item)).get(0);
             });
         });
@@ -73,7 +74,7 @@ public class SentinelCanaryTests {
 
         bridgeService = new DynamoBridgeService(
             tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, 
-            adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent
+            adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, mock(KVCacheRegistry.class)
         );
 
         ReflectionTestUtils.setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.CANARY);

@@ -63,14 +63,15 @@ public class SentinelInferenceTests {
         chaosComponent = mock(ChaosComponent.class);
 
         // Mock adaptiveBatcher.submit to return a future that respects task execution time
-        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
+        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), anyBoolean(), any())).thenAnswer(invocation -> {
             float val = invocation.getArgument(0);
             String session = invocation.getArgument(1);
             String model = invocation.getArgument(2);
-            java.util.function.Function<java.util.List<com.velo.sentinel.service.AdaptiveBatcher.BatchItem>, java.util.List<Float>> task = invocation.getArgument(4);
+            boolean isPrefill = invocation.getArgument(4);
+            java.util.function.Function<java.util.List<com.velo.sentinel.service.AdaptiveBatcher.BatchItem>, java.util.List<Float>> task = invocation.getArgument(5);
             
             return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                com.velo.sentinel.service.AdaptiveBatcher.BatchItem item = new com.velo.sentinel.service.AdaptiveBatcher.BatchItem(val, session, model);
+                com.velo.sentinel.service.AdaptiveBatcher.BatchItem item = new com.velo.sentinel.service.AdaptiveBatcher.BatchItem(val, session, model, isPrefill);
                 java.util.List<Float> results = task.apply(java.util.List.of(item));
                 return results.get(0);
             });
@@ -93,7 +94,7 @@ public class SentinelInferenceTests {
         dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, cacheRegistry);
 
         // Manually initialize @Value fields for unit tests
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);

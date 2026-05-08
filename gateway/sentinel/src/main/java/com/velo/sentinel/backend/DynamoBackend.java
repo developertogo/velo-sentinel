@@ -57,7 +57,7 @@ public class DynamoBackend implements InferenceBackend {
         log.info("DYNAMO-REGISTRY: Session {} is WARM. Leveraging local KV-Cache.", sessionId);
     } else {
         log.warn("DYNAMO-REGISTRY: Session {} is COLD. Initializing disaggregated KV-Cache...", sessionId);
-        cacheRegistry.markSessionActive(sessionId);
+        cacheRegistry.markSessionActive(sessionId, "dynamo-backend-internal");
     }
 
     return dynamoClient.callDynamo(value, sessionId, modelName);
