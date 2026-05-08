@@ -343,18 +343,13 @@ public class DynamoBridgeService implements InferenceBackend {
       boolean isPrefill = !kvCacheRegistry.isSessionWarm(sessionId);
       log.debug("DISAGGREGATED-ROUTING [Session: {}]: Type={}", sessionId, isPrefill ? "PREFILL" : "DECODE");
 
-      return adaptiveBatcher.submit(value, sessionId, modelName, priority, isPrefill, items -> {
+      float result = adaptiveBatcher.submit(value, sessionId, modelName, priority, isPrefill, items -> {
         return items.stream()
             .map(item -> {
               try {
                 return InferenceContext.runInContext(item.sessionId(), () -> {
                   chaosComponent.maybeInjectChaos(item.modelName());
-                  float res = resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName());
-                  // Mark session as warm after successful prefill
-                  if (item.isPrefill()) {
-                    kvCacheRegistry.markSessionActive(item.sessionId());
-                  }
-                  return res;
+                  return resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName());
                 });
               } catch (Exception e) {
                 throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
@@ -362,6 +357,10 @@ public class DynamoBridgeService implements InferenceBackend {
             })
             .toList();
       }).get((long) latencyThresholdMs, TimeUnit.MILLISECONDS);
+
+      // Successfully processed -> Mark session as Warm in the distributed registry with node affinity
+      kvCacheRegistry.markSessionActive(sessionId, "dynamo-worker-1");
+      return result;
     } catch (Exception e) {
       log.warn(
           "SLO-VETO [Model: {}]: Dynamo path exceeded {}ms or failed. Falling back to Triton to protect P99. Reason: {}",

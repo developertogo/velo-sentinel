@@ -19,7 +19,7 @@ public class VeloCoreBridge implements AutoCloseable {
 
     static {
         // In production, this would be loaded from a specific path or classpath
-        String libPath = System.getProperty("velo.core.lib.path", "/Users/chung/sandbox/netflix/velo-core/target/debug/libvelo_core.dylib");
+        String libPath = System.getProperty("velo.core.lib.path", "/Users/chung/sandbox/anthropic/core/target/debug/libvelo_core.dylib");
         LOOKUP = SymbolLookup.libraryLookup(Path.of(libPath), Arena.global());
     }
 
