@@ -72,7 +72,7 @@ public class SentinelCanaryTests {
         when(spanBuilder.startSpan()).thenReturn(mock(io.opentelemetry.api.trace.Span.class));
 
         bridgeService = new DynamoBridgeService(
-            tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, 
+            tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, 
             adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent
         );
 

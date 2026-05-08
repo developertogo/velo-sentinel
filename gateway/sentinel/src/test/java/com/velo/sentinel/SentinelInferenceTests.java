@@ -93,7 +93,7 @@ public class SentinelInferenceTests {
         dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent);
 
         // Manually initialize @Value fields for unit tests
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);

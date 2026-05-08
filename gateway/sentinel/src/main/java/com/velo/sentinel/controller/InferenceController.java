@@ -84,7 +84,7 @@ public class InferenceController {
         
         try {
             return com.velo.sentinel.context.InferenceContext.runInContext(sessionId, () -> {
-                float result = bridgeService.infer(request.value(), sessionId, model, request.priority(), request.complexity());
+                float result = bridgeService.sentinelExecute(request.value(), sessionId, model, request.priority(), request.complexity(), request.precision(), request.useAgenticOptimization());
                 return org.springframework.http.ResponseEntity.ok(new InferenceResponse(
                     sessionId,
                     result,

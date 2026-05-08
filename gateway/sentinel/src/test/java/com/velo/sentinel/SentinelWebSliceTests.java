@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -51,7 +52,7 @@ public class SentinelWebSliceTests {
      */
     @Test
     void testInferenceEndpoint_FullPayload() throws Exception {
-        when(bridgeService.infer(anyFloat(), anyString(), anyString(), any(), anyInt())).thenReturn(42.0f);
+        when(bridgeService.sentinelExecute(anyFloat(), anyString(), anyString(), any(), anyInt(), any(), anyBoolean())).thenReturn(42.0f);
 
         // Constructor: String sessionId, String modelName, float value, boolean useAgenticOptimization
         InferenceRequest request = new InferenceRequest("user-789", "llama-3", 10.0f, true);
@@ -64,7 +65,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.sessionId").value("user-789"))
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
 
-        verify(bridgeService).infer(10.0f, "user-789", "llama-3", com.velo.sentinel.model.PriorityTier.INTERACTIVE, 0);
+        verify(bridgeService).sentinelExecute(eq(10.0f), eq("user-789"), eq("llama-3"), eq(com.velo.sentinel.model.PriorityTier.INTERACTIVE), eq(0), eq(com.velo.sentinel.model.ModelPrecision.FP16), eq(true));
     }
 
     /**
@@ -76,7 +77,7 @@ public class SentinelWebSliceTests {
     void testInferenceEndpoint_AnonymousSession() throws Exception {
         // modelName defaults to "simple" in the controller if null
         // sessionId defaults to "anonymous" in the controller if null
-        when(bridgeService.infer(anyFloat(), eq("anonymous"), eq("simple"), any(), anyInt())).thenReturn(99.0f);
+        when(bridgeService.sentinelExecute(anyFloat(), eq("anonymous"), eq("simple"), any(), anyInt(), any(), anyBoolean())).thenReturn(99.0f);
 
         // Payload with missing sessionId and modelName
         String jsonPayload = "{ \"value\": 5.0, \"useAgenticOptimization\": false }";
@@ -88,7 +89,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.prediction").value(99.0))
                 .andExpect(jsonPath("$.sessionId").value("anonymous"));
 
-        verify(bridgeService).infer(eq(5.0f), eq("anonymous"), eq("simple"), any(), anyInt());
+        verify(bridgeService).sentinelExecute(eq(5.0f), eq("anonymous"), eq("simple"), any(), anyInt(), any(), anyBoolean());
     }
 
     /**
@@ -111,7 +112,7 @@ public class SentinelWebSliceTests {
      */
     @Test
     void testTotalSystemOutage_Returns503() throws Exception {
-        when(bridgeService.infer(anyFloat(), anyString(), anyString(), any(), anyInt()))
+        when(bridgeService.sentinelExecute(anyFloat(), anyString(), anyString(), any(), anyInt(), any(), anyBoolean()))
             .thenThrow(new RuntimeException("Both Triton and Dynamo are down"));
 
         InferenceRequest request = new InferenceRequest("user-123", "simple", 10.0f, true);

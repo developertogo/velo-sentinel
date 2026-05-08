@@ -2,6 +2,8 @@ package com.velo.sentinel.backend;
 
 import com.velo.sentinel.client.DynamoGrpcClient;
 import com.velo.sentinel.service.KVCacheRegistry;
+import com.velo.sentinel.model.PriorityTier;
+import com.velo.sentinel.model.ModelPrecision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -59,5 +61,10 @@ public class DynamoBackend implements InferenceBackend {
     }
 
     return dynamoClient.callDynamo(value, sessionId, modelName);
+  }
+
+  @Override
+  public float sentinelExecute(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
+    return infer(value, sessionId, modelName);
   }
 }
