@@ -43,9 +43,12 @@ public class TritonGrpcClient {
 
     @PostConstruct
     public void init() {
-        log.info("TRITON-CLIENT: Connecting to legacy backend at {}:{} (Model: {})", host, port, modelName);
+        String target = "dns:///" + host + ":" + port;
+        log.info("TRITON-CLIENT: Connecting with Client-Side LB to target: {} (Model: {})", target, modelName);
+        
         this.channel = ManagedChannelBuilder
-                .forAddress(host, port)
+                .forTarget(target)
+                .defaultLoadBalancingPolicy("round_robin")
                 .usePlaintext()
                 .build();
 

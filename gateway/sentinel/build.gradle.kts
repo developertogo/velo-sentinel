@@ -57,7 +57,10 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-test-autoconfigure:4.0.5")
   testImplementation("com.fasterxml.jackson.core:jackson-databind")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-  testImplementation("it.ozimov:embedded-redis:0.7.3")
+  testImplementation("it.ozimov:embedded-redis:0.7.3") {
+      exclude(group = "org.slf4j", module = "slf4j-simple")
+  }
+  testImplementation("org.springframework.security:spring-security-test")
 
   // OpenTelemetry
   implementation(platform("io.opentelemetry:opentelemetry-bom:1.44.1"))
@@ -71,6 +74,9 @@ dependencies {
 
   // Structured JSON Logging
   implementation("net.logstash.logback:logstash-logback-encoder:8.0")
+
+  // Enterprise Security
+  implementation("org.springframework.boot:spring-boot-starter-security")
 }
 
 configure<com.google.protobuf.gradle.ProtobufExtension> {
