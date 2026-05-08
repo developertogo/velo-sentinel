@@ -14,8 +14,16 @@ spring:
 
 velo:
   sentinel:
-    routing-mode: SHADOW    # Options: TRITON, DYNAMO, SHADOW
+    routing-mode: SHADOW    # Options: TRITON, DYNAMO, SHADOW, CANARY
     latency-threshold-ms: 200.0  # SLO for shadow mode comparisons
+    canary-percentage: 5         # Percentage for CANARY mode
+    chaos:
+      enabled: false
+      failure-rate: 0.1
+      latency-rate: 0.2
+    hedging:
+      enabled: true
+      delay-ms: 50.0             # Start hedge after 50ms
 
 management:
   endpoints:

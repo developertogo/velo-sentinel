@@ -48,11 +48,17 @@ public class DynamoBridgeService implements InferenceBackend {
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
 
-  @Value("${velo.sentinel.canary.percentage:5}")
-  private int canaryPercentage;
-
   @Value("${velo.sentinel.latency-threshold-ms:200.0}")
   private double latencyThresholdMs;
+
+  @Value("${velo.sentinel.canary-percentage:5}")
+  private int canaryPercentage;
+
+  @Value("${velo.sentinel.hedging.enabled:false}")
+  private boolean hedgingEnabled;
+
+  @Value("${velo.sentinel.hedging.delay-ms:50.0}")
+  private float hedgingDelayMs;
 
   public enum RoutingMode {
     TRITON, DYNAMO, SHADOW, CANARY
@@ -107,17 +113,17 @@ public class DynamoBridgeService implements InferenceBackend {
   public float infer(float value, String sessionId, String modelName) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     try {
-        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName));
+        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName, com.velo.sentinel.model.PriorityTier.INTERACTIVE, 0));
     } catch (Exception e) {
         throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
     }
   }
 
   @Override
-  public float infer(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
+  public float infer(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority, int complexity) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     try {
-        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName, priority));
+        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName, priority, complexity));
     } catch (Exception e) {
         throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
     }
@@ -133,8 +139,15 @@ public class DynamoBridgeService implements InferenceBackend {
    * @param priority The priority tier (SLA aware).
    * @return The final prediction.
    */
-  private float executeInference(float value, String sessionId, String modelName, PriorityTier priority) {
+  private float executeInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
     RoutingMode effectiveMode = routingMode;
+    
+    // CONTEXTUAL-ROUTING: If complexity is low, force TRITON to save cost
+    if (complexity < 50 && complexity > 0) {
+        log.info("CONTEXTUAL-ROUTING [Session: {}]: Complexity {} is below threshold (50). Routing to Efficiency Node (TRITON).", 
+            sessionId, complexity);
+        effectiveMode = RoutingMode.TRITON;
+    }
     
     // SAFETY-SWITCH: If accuracy drift is detected, veto Dynamo and force Triton
     if (driftMonitor.isVetoActive()) {
@@ -156,6 +169,11 @@ public class DynamoBridgeService implements InferenceBackend {
         try (Scope scope = span.makeCurrent()) {
           Timer.Sample sample = Timer.start(meterRegistry);
           try {
+            // Orchestrate with Hedging if enabled
+            if (hedgingEnabled && finalMode != RoutingMode.TRITON) {
+              return executeHedgedInference(value, sessionId, modelName, finalMode, priority, complexity);
+            }
+
             float result = switch (finalMode) {
               case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
               case SHADOW -> routeShadow(value, sessionId, modelName);
@@ -187,7 +205,45 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   private float executeInference(float value, String sessionId, String modelName) {
-      return executeInference(value, sessionId, modelName, com.velo.sentinel.model.PriorityTier.INTERACTIVE);
+      return executeInference(value, sessionId, modelName, com.velo.sentinel.model.PriorityTier.INTERACTIVE, 0);
+  }
+
+  /**
+   * Hedged Inference: Shaves the tail of the latency distribution.
+   * Starts primary, and if it exceeds delayMs, starts a second request.
+   */
+  private float executeHedgedInference(float value, String sessionId, String modelName, RoutingMode mode, com.velo.sentinel.model.PriorityTier priority, int complexity) {
+    log.debug("HEDGING-INIT [Session: {}]: Hedging enabled. Delay: {}ms", sessionId, hedgingDelayMs);
+
+    CompletableFuture<Float> primary = CompletableFuture.supplyAsync(() -> {
+        return switch (mode) {
+            case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
+            case SHADOW -> routeShadow(value, sessionId, modelName);
+            case CANARY -> {
+                int bucket = Math.abs(sessionId.hashCode()) % 100;
+                if (bucket < canaryPercentage) {
+                    yield routeToDynamo(value, sessionId, modelName, priority);
+                } else {
+                    yield routeToTriton(value, sessionId, modelName);
+                }
+            }
+            default -> routeToTriton(value, sessionId, modelName);
+        };
+    });
+
+    try {
+      // Wait for primary with the hedging delay
+      return primary.get((long) hedgingDelayMs, TimeUnit.MILLISECONDS);
+    } catch (Exception e) {
+      // Primary took too long (or failed). Spawn a hedge!
+      log.warn("HEDGING-TRIGGER [Session: {}]: Primary exceeded {}ms. Spawning hedged request to Triton.", 
+          sessionId, hedgingDelayMs);
+      
+      CompletableFuture<Float> hedge = CompletableFuture.supplyAsync(() -> routeToTriton(value, sessionId, modelName));
+      
+      // Return the fastest between primary and hedge
+      return (float) CompletableFuture.anyOf(primary, hedge).join();
+    }
   }
 
   private String determineSession() {

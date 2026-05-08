@@ -66,7 +66,11 @@ public class SentinelSecurityTests {
         when(dynamoClient.checkHealth()).thenReturn(true);
         
         // Mock inference calls to avoid gRPC errors
-        when(tritonClient.infer(anyFloat())).thenReturn(null); // Or mock a real response if needed
+        // Mock inference calls to avoid gRPC errors
+        com.velo.sentinel.grpc.ModelInferResponse mockResponse = com.velo.sentinel.grpc.ModelInferResponse.newBuilder()
+            .addRawOutputContents(com.google.protobuf.ByteString.copyFrom(new byte[4])) // 4 bytes for a float
+            .build();
+        when(tritonClient.infer(anyFloat(), anyString())).thenReturn(mockResponse);
         when(dynamoClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(1.0f);
     }
 

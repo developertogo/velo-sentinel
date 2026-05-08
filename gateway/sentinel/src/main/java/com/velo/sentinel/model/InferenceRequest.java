@@ -10,16 +10,20 @@ public record InferenceRequest(
     String modelName,
     float value,
     boolean useAgenticOptimization,
-    PriorityTier priority
+    PriorityTier priority,
+    Integer complexity
 ) {
     public InferenceRequest {
         if (priority == null) {
             priority = PriorityTier.INTERACTIVE; // Default to interactive if not provided
         }
+        if (complexity == null) {
+            complexity = 0;
+        }
     }
     
     // Legacy constructor for existing tests/calls
     public InferenceRequest(String sessionId, String modelName, float value, boolean useAgenticOptimization) {
-        this(sessionId, modelName, value, useAgenticOptimization, PriorityTier.INTERACTIVE);
+        this(sessionId, modelName, value, useAgenticOptimization, PriorityTier.INTERACTIVE, 0);
     }
 }
