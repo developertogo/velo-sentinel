@@ -20,9 +20,55 @@ import org.springframework.web.bind.annotation.RestController;
 public class InferenceController {
 
     private final DynamoBridgeService bridgeService;
+    private final com.velo.sentinel.streaming.ResilientStreamBridge streamBridge;
 
-    public InferenceController(DynamoBridgeService bridgeService) {
+    public InferenceController(DynamoBridgeService bridgeService, 
+                               com.velo.sentinel.streaming.ResilientStreamBridge streamBridge) {
         this.bridgeService = bridgeService;
+        this.streamBridge = streamBridge;
+    }
+
+    /**
+     * Resilient Streaming Endpoint (SSE).
+     */
+    @org.springframework.web.bind.annotation.GetMapping(value = "/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(
+            @org.springframework.web.bind.annotation.RequestParam float value,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String sessionId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String model) {
+        
+        String session = sessionId != null ? sessionId : "stream-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String modelName = model != null ? model : "simple";
+        
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter = new org.springframework.web.servlet.mvc.method.annotation.SseEmitter();
+        
+        streamBridge.executeResilientStream(value, session, modelName).subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(com.velo.sentinel.streaming.StreamEvent item) {
+                try {
+                    emitter.send(item);
+                } catch (Exception e) {
+                    emitter.completeWithError(e);
+                }
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                emitter.completeWithError(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                emitter.complete();
+            }
+        });
+        
+        return emitter;
     }
 
     /**
@@ -38,7 +84,7 @@ public class InferenceController {
         
         try {
             return com.velo.sentinel.context.InferenceContext.runInContext(sessionId, () -> {
-                float result = bridgeService.infer(request.value(), sessionId, model, request.priority());
+                float result = bridgeService.infer(request.value(), sessionId, model, request.priority(), request.complexity());
                 return org.springframework.http.ResponseEntity.ok(new InferenceResponse(
                     sessionId,
                     result,

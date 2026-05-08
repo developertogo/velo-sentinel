@@ -26,4 +26,8 @@ public interface InferenceBackend {
   default float infer(float value, String sessionId, String modelName, PriorityTier priority) {
       return infer(value, sessionId, modelName);
   }
+
+  default float infer(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
+      return infer(value, sessionId, modelName, priority);
+  }
 }
