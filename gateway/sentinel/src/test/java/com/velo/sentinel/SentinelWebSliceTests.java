@@ -72,7 +72,8 @@ public class SentinelWebSliceTests {
     @Test
     void testInferenceEndpoint_AnonymousSession() throws Exception {
         // modelName defaults to "simple" in the controller if null
-        when(bridgeService.infer(anyFloat(), isNull(), eq("simple"), any())).thenReturn(99.0f);
+        // sessionId defaults to "anonymous" in the controller if null
+        when(bridgeService.infer(anyFloat(), eq("anonymous"), eq("simple"), any())).thenReturn(99.0f);
 
         // Payload with missing sessionId and modelName
         String jsonPayload = "{ \"value\": 5.0, \"useAgenticOptimization\": false }";
@@ -84,7 +85,7 @@ public class SentinelWebSliceTests {
                 .andExpect(jsonPath("$.prediction").value(99.0))
                 .andExpect(jsonPath("$.sessionId").value("anonymous"));
 
-        verify(bridgeService).infer(eq(5.0f), isNull(), eq("simple"), any());
+        verify(bridgeService).infer(eq(5.0f), eq("anonymous"), eq("simple"), any());
     }
 
     /**

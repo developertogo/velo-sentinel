@@ -40,6 +40,7 @@ public class DynamoBridgeService implements InferenceBackend {
   private final DynamoResilienceComponent resilienceComponent;
   private final AdaptiveBatcher adaptiveBatcher;
   private final Tracer tracer;
+  private final RequestThrottler throttler;
 
   @Value("${velo.sentinel.routing-mode:TRITON}")
   private RoutingMode routingMode;
@@ -56,13 +57,15 @@ public class DynamoBridgeService implements InferenceBackend {
       MeterRegistry meterRegistry,
       DynamoResilienceComponent resilienceComponent,
       AdaptiveBatcher adaptiveBatcher,
-      Tracer tracer) {
+      Tracer tracer,
+      RequestThrottler throttler) {
     this.tritonBackend = tritonBackend;
     this.dynamoBackend = dynamoBackend;
     this.meterRegistry = meterRegistry;
     this.resilienceComponent = resilienceComponent;
     this.adaptiveBatcher = adaptiveBatcher;
     this.tracer = tracer;
+    this.throttler = throttler;
   }
 
   /**
@@ -93,15 +96,21 @@ public class DynamoBridgeService implements InferenceBackend {
   @Override
   public float infer(float value, String sessionId, String modelName) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
-    return ScopedValue.where(InferenceContext.SESSION_ID, safeSession)
-        .call(() -> executeInference(value, safeSession, modelName));
+    try {
+        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName));
+    } catch (Exception e) {
+        throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
+    }
   }
 
   @Override
   public float infer(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
-    return ScopedValue.where(InferenceContext.SESSION_ID, safeSession)
-        .call(() -> executeInference(value, safeSession, modelName, priority));
+    try {
+        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName, priority));
+    } catch (Exception e) {
+        throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
+    }
   }
 
   /**
@@ -115,32 +124,34 @@ public class DynamoBridgeService implements InferenceBackend {
    * @return The final prediction.
    */
   private float executeInference(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority) {
-    Span span = tracer.spanBuilder("VeloInference")
-        .setAttribute("inference.model", modelName)
-        .setAttribute("inference.mode", routingMode.name())
-        .setAttribute("inference.session", sessionId)
-        .setAttribute("inference.priority", priority != null ? priority.name() : "NONE")
-        .startSpan();
+    return throttler.throttle(sessionId, () -> {
+        Span span = tracer.spanBuilder("VeloInference")
+            .setAttribute("inference.model", modelName)
+            .setAttribute("inference.mode", routingMode.name())
+            .setAttribute("inference.session", sessionId)
+            .setAttribute("inference.priority", priority != null ? priority.name() : "NONE")
+            .startSpan();
 
-    try (Scope scope = span.makeCurrent()) {
-      Timer.Sample sample = Timer.start(meterRegistry);
-      try {
-        float result = switch (routingMode) {
-          case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
-          case SHADOW -> routeShadow(value, sessionId, modelName);
-          case TRITON -> routeToTriton(value, sessionId, modelName);
-        };
-        sample.stop(meterRegistry.timer("velo.sentinel.inference", "mode", routingMode.name(), "model", modelName));
-        return result;
-      } catch (Exception e) {
-        meterRegistry.counter("velo.sentinel.errors", "mode", routingMode.name(), "model", modelName).increment();
-        span.recordException(e);
-        span.setStatus(StatusCode.ERROR, e.getMessage());
-        throw e;
-      }
-    } finally {
-      span.end();
-    }
+        try (Scope scope = span.makeCurrent()) {
+          Timer.Sample sample = Timer.start(meterRegistry);
+          try {
+            float result = switch (routingMode) {
+              case DYNAMO -> routeToDynamo(value, sessionId, modelName, priority);
+              case SHADOW -> routeShadow(value, sessionId, modelName);
+              case TRITON -> routeToTriton(value, sessionId, modelName);
+            };
+            sample.stop(meterRegistry.timer("velo.sentinel.inference", "mode", routingMode.name(), "model", modelName));
+            return result;
+          } catch (Exception e) {
+            meterRegistry.counter("velo.sentinel.errors", "mode", routingMode.name(), "model", modelName).increment();
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR, e.getMessage());
+            throw e;
+          }
+        } finally {
+          span.end();
+        }
+    });
   }
 
   private float executeInference(float value, String sessionId, String modelName) {
@@ -160,7 +171,14 @@ public class DynamoBridgeService implements InferenceBackend {
     try {
       return adaptiveBatcher.submit(value, sessionId, modelName, priority, items -> {
         return items.stream()
-            .map(item -> resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName()))
+            .map(item -> {
+                try {
+                    return InferenceContext.runInContext(item.sessionId(), () -> 
+                        resilienceComponent.protectedDynamoCall(item.value(), item.sessionId(), item.modelName()));
+                } catch (Exception e) {
+                    throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
+                }
+            })
             .toList();
       }).get((long) latencyThresholdMs, TimeUnit.MILLISECONDS);
     } catch (Exception e) {
@@ -205,11 +223,14 @@ public class DynamoBridgeService implements InferenceBackend {
     final float capturedResult = tritonResult;
     CompletableFuture.runAsync(() -> {
       try {
-        float dynamoResult = resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
-        float drift = Math.abs(capturedResult - dynamoResult);
-        log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, capturedResult, dynamoResult, drift);
-        DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry).record(drift);
-        meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
+        InferenceContext.runInContext(sessionId, () -> {
+            float dynamoResult = resilienceComponent.protectedDynamoCall(value, sessionId, modelName);
+            float drift = Math.abs(capturedResult - dynamoResult);
+            log.info("SHADOW-COMPARISON [Model: {}]: Triton={}, Dynamo={}, Drift={}", modelName, capturedResult, dynamoResult, drift);
+            DistributionSummary.builder("velo.sentinel.shadow.drift").tag("model", modelName).register(meterRegistry).record(drift);
+            meterRegistry.counter("velo.sentinel.shadow.comparisons", "model", modelName).increment();
+            return null;
+        });
       } catch (Exception e) {
         log.warn("SHADOW-VETO [Model: {}]: Dynamo comparison failed asynchronously: {}", modelName, e.getMessage());
         meterRegistry.counter("velo.sentinel.shadow.timeout", "model", modelName).increment();

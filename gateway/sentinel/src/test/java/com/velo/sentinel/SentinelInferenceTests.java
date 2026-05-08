@@ -9,6 +9,7 @@ import com.velo.sentinel.service.AdaptiveBatcher;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.DynamoResilienceComponent;
 import com.velo.sentinel.service.KVCacheRegistry;
+import com.velo.sentinel.service.RequestThrottler;
 import com.google.protobuf.ByteString;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -41,6 +42,7 @@ public class SentinelInferenceTests {
     private DynamoGrpcClient dynamoGrpcClient;
     private MeterRegistry meterRegistry;
     private Tracer tracer;
+    private RequestThrottler throttler;
     private org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @BeforeEach
@@ -49,6 +51,7 @@ public class SentinelInferenceTests {
         dynamoGrpcClient = mock(DynamoGrpcClient.class);
         meterRegistry = new SimpleMeterRegistry();
         tracer = mock(Tracer.class);
+        throttler = mock(RequestThrottler.class);
         redisTemplate = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
         cacheRegistry = new KVCacheRegistry(redisTemplate);
         adaptiveBatcher = new AdaptiveBatcher();
@@ -59,12 +62,18 @@ public class SentinelInferenceTests {
         when(tracer.spanBuilder(anyString())).thenReturn(mockSpanBuilder);
         when(mockSpanBuilder.setAttribute(anyString(), anyString())).thenReturn(mockSpanBuilder);
         when(mockSpanBuilder.startSpan()).thenReturn(mockSpan);
+
+        // Mock throttler to pass through calls by default
+        when(throttler.throttle(anyString(), any())).thenAnswer(invocation -> {
+            java.util.function.Supplier<?> task = invocation.getArgument(1);
+            return task.get();
+        });
         
         tritonBackend = new TritonBackend(tritonClient);
         dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler);
 
         // Manually initialize @Value fields for unit tests
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
