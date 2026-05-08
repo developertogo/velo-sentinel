@@ -15,6 +15,7 @@ public record InferenceResponse(
         SUCCESS,
         FAILURE,
         CIRCUIT_OPEN,
-        BACKEND_OUTAGE
+        BACKEND_OUTAGE,
+        SLA_VIOLATED
     }
 }

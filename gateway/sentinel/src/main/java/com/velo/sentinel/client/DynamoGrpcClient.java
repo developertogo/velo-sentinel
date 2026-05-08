@@ -53,6 +53,15 @@ public class DynamoGrpcClient {
     }
 
     /**
+     * Health check: Verifies connectivity to the Dynamo backend.
+     */
+    public boolean checkHealth() {
+        if (channel == null) return false;
+        io.grpc.ConnectivityState state = channel.getState(true);
+        return state != io.grpc.ConnectivityState.SHUTDOWN && state != io.grpc.ConnectivityState.TRANSIENT_FAILURE;
+    }
+
+    /**
      * Executes the gRPC call to the Dynamo service for a specific model.
      * Translates domain parameters into Proto-generated stubs.
      * 

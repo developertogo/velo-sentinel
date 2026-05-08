@@ -68,6 +68,9 @@ dependencies {
   
   // Bridge Micrometer to OpenTelemetry
   implementation("io.micrometer:micrometer-tracing-bridge-otel:1.4.0")
+
+  // Structured JSON Logging
+  implementation("net.logstash.logback:logstash-logback-encoder:8.0")
 }
 
 configure<com.google.protobuf.gradle.ProtobufExtension> {

@@ -5,6 +5,8 @@ import com.velo.sentinel.grpc.GRPCInferenceServiceGrpc.GRPCInferenceServiceBlock
 import com.velo.sentinel.grpc.InferTensorContents;
 import com.velo.sentinel.grpc.ModelInferRequest;
 import com.velo.sentinel.grpc.ModelInferResponse;
+import com.velo.sentinel.grpc.ServerLiveRequest;
+import com.velo.sentinel.grpc.ServerLiveResponse;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -89,6 +91,20 @@ public class TritonGrpcClient {
             log.error("TRITON-CLIENT-ERROR: gRPC call failed for model {}. Status: {}, Description: {}", 
                     modelNameOverride, e.getStatus().getCode(), e.getStatus().getDescription());
             throw e;
+        }
+    }
+
+    /**
+     * Health check: Verifies if the Triton server is alive.
+     */
+    public boolean checkHealth() {
+        try {
+            ServerLiveResponse response = stub.withDeadlineAfter(100, TimeUnit.MILLISECONDS)
+                    .serverLive(ServerLiveRequest.getDefaultInstance());
+            return response.getLive();
+        } catch (Exception e) {
+            log.warn("TRITON-HEALTH-CHECK: Backend unreachable or unhealthy: {}", e.getMessage());
+            return false;
         }
     }
 

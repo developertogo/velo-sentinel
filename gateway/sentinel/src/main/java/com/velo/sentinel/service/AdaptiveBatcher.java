@@ -1,6 +1,7 @@
 package com.velo.sentinel.service;
 
 import com.velo.sentinel.model.PriorityTier;
+import com.velo.sentinel.context.InferenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Function;
+import jakarta.annotation.PreDestroy;
 
 /**
  * AdaptiveBatcher: High-performance request coalescing for GPU efficiency.
@@ -27,10 +29,26 @@ public class AdaptiveBatcher {
     // SLA-Aware Earliest Deadline First Queue
     private final BlockingQueue<InferenceTask> queue = new PriorityBlockingQueue<>();
     private final ExecutorService scheduler = Executors.newVirtualThreadPerTaskExecutor();
+    private final Thread batcherThread;
+    private volatile boolean shuttingDown = false;
 
     public AdaptiveBatcher() {
         // Start the background batch processing loop
-        Thread.ofVirtual().name("sentinel-batcher").start(this::processLoop);
+        this.batcherThread = Thread.ofVirtual().name("sentinel-batcher").start(this::processLoop);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        log.info("SHUTDOWN: AdaptiveBatcher draining queue ({} items remaining)...", queue.size());
+        this.shuttingDown = true;
+        this.batcherThread.interrupt();
+        try {
+            this.batcherThread.join(TimeUnit.SECONDS.toMillis(5));
+            log.info("SHUTDOWN: AdaptiveBatcher gracefully terminated.");
+        } catch (InterruptedException e) {
+            log.warn("SHUTDOWN: Batcher termination interrupted.");
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -60,16 +78,24 @@ public class AdaptiveBatcher {
     }
 
     private void processLoop() {
-        while (!Thread.currentThread().isInterrupted()) {
+        while (!Thread.currentThread().isInterrupted() || (!queue.isEmpty() && shuttingDown)) {
             List<InferenceTask> batch = new ArrayList<>();
             try {
-                // Wait for the first item
-                InferenceTask first = queue.poll(1, TimeUnit.SECONDS);
-                if (first == null) continue;
+                // Wait for the first item (adjust timeout if shutting down to drain fast)
+                InferenceTask first = queue.poll(shuttingDown ? 10 : 1000, TimeUnit.MILLISECONDS);
+                if (first == null) {
+                    if (shuttingDown) break; // Queue drained
+                    continue;
+                }
                 
                 // SLA Veto Logic
                 if (System.currentTimeMillis() > first.deadline()) {
-                    log.warn("SLA-VETO: Task for session {} exceeded deadline. Dropping.", first.item().sessionId());
+                    try {
+                        InferenceContext.runInContext(first.item().sessionId(), () -> {
+                            log.warn("SLA-VETO: Task exceeded deadline. Dropping.");
+                            return null;
+                        });
+                    } catch (Exception e) {}
                     first.future().completeExceptionally(new TimeoutException("SLA Violated (Deadline passed)"));
                     continue;
                 }
@@ -82,7 +108,12 @@ public class AdaptiveBatcher {
                     InferenceTask next = queue.poll(maxWaitMs / 2, TimeUnit.MILLISECONDS);
                     if (next != null) {
                         if (System.currentTimeMillis() > next.deadline()) {
-                            log.warn("SLA-VETO: Task for session {} exceeded deadline. Dropping.", next.item().sessionId());
+                            try {
+                                InferenceContext.runInContext(next.item().sessionId(), () -> {
+                                    log.warn("SLA-VETO: Task exceeded deadline. Dropping.");
+                                    return null;
+                                });
+                            } catch (Exception e) {}
                             next.future().completeExceptionally(new TimeoutException("SLA Violated (Deadline passed)"));
                             // Do not add to batch, continue filling
                         } else {

@@ -37,16 +37,29 @@ public class InferenceController {
         String sessionId = request.sessionId() != null ? request.sessionId() : "anonymous";
         
         try {
-            float result = bridgeService.infer(request.value(), request.sessionId(), model, request.priority());
-            return org.springframework.http.ResponseEntity.ok(new InferenceResponse(
-                sessionId,
-                result,
-                InferenceResponse.Status.SUCCESS
-            ));
+            return com.velo.sentinel.context.InferenceContext.runInContext(sessionId, () -> {
+                float result = bridgeService.infer(request.value(), sessionId, model, request.priority());
+                return org.springframework.http.ResponseEntity.ok(new InferenceResponse(
+                    sessionId,
+                    result,
+                    InferenceResponse.Status.SUCCESS
+                ));
+            });
+        } catch (io.github.resilience4j.ratelimiter.RequestNotPermitted e) {
+            org.slf4j.LoggerFactory.getLogger(InferenceController.class)
+                .warn("SLA-VIOLATION: Session {} throttled. Reason: {}", sessionId, e.getMessage());
+            
+            return org.springframework.http.ResponseEntity
+                .status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)
+                .body(new InferenceResponse(
+                    sessionId,
+                    0.0f,
+                    InferenceResponse.Status.SLA_VIOLATED
+                ));
         } catch (Exception e) {
             // Log the critical outage
             org.slf4j.LoggerFactory.getLogger(InferenceController.class)
-                .error("CRITICAL-OUTAGE: Total system failure for session {}. Reason: {}", sessionId, e.getMessage());
+                .error("CRITICAL-OUTAGE: Total system failure. Reason: {}", e.getMessage());
             
             return org.springframework.http.ResponseEntity
                 .status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
