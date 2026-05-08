@@ -11,19 +11,23 @@ public record InferenceRequest(
     float value,
     boolean useAgenticOptimization,
     PriorityTier priority,
-    Integer complexity
+    Integer complexity,
+    ModelPrecision precision
 ) {
     public InferenceRequest {
         if (priority == null) {
-            priority = PriorityTier.INTERACTIVE; // Default to interactive if not provided
+            priority = PriorityTier.INTERACTIVE; 
         }
         if (complexity == null) {
             complexity = 0;
+        }
+        if (precision == null) {
+            precision = ModelPrecision.FP16; // Default to FP16
         }
     }
     
     // Legacy constructor for existing tests/calls
     public InferenceRequest(String sessionId, String modelName, float value, boolean useAgenticOptimization) {
-        this(sessionId, modelName, value, useAgenticOptimization, PriorityTier.INTERACTIVE, 0);
+        this(sessionId, modelName, value, useAgenticOptimization, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16);
     }
 }

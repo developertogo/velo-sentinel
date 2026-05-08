@@ -17,6 +17,7 @@ velo:
     routing-mode: SHADOW    # Options: TRITON, DYNAMO, SHADOW, CANARY
     latency-threshold-ms: 200.0  # SLO for shadow mode comparisons
     canary-percentage: 5         # Percentage for CANARY mode
+    default-precision: FP16      # Default if not specified
     chaos:
       enabled: false
       failure-rate: 0.1
@@ -41,6 +42,13 @@ dynamo:
   grpc:
     host: localhost
     port: 9001
+
+metal:
+  grpc:
+    host: localhost
+    port: 7001                   # Local Velo-Core (Metal)
+    model-name: phi-2-metal      # Small local-eligible model
+
 
 resilience4j:
   circuitbreaker:

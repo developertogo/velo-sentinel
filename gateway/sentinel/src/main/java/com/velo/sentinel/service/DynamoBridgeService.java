@@ -3,7 +3,9 @@ package com.velo.sentinel.service;
 import com.velo.sentinel.backend.InferenceBackend;
 import com.velo.sentinel.backend.TritonBackend;
 import com.velo.sentinel.backend.DynamoBackend;
+import com.velo.sentinel.backend.MetalBackend;
 import com.velo.sentinel.model.PriorityTier;
+import com.velo.sentinel.model.ModelPrecision;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -38,6 +40,8 @@ public class DynamoBridgeService implements InferenceBackend {
   private static final Logger log = LoggerFactory.getLogger(DynamoBridgeService.class);
   private final TritonBackend tritonBackend;
   private final DynamoBackend dynamoBackend;
+  private final MetalBackend metalBackend;
+  private final SpeculativeOrchestrator speculativeOrchestrator;
   private final DynamoResilienceComponent resilienceComponent;
   private final AdaptiveBatcher adaptiveBatcher;
   private final Tracer tracer;
@@ -66,6 +70,8 @@ public class DynamoBridgeService implements InferenceBackend {
 
   public DynamoBridgeService(TritonBackend tritonBackend,
       DynamoBackend dynamoBackend,
+      MetalBackend metalBackend,
+      SpeculativeOrchestrator speculativeOrchestrator,
       MeterRegistry meterRegistry,
       DynamoResilienceComponent resilienceComponent,
       AdaptiveBatcher adaptiveBatcher,
@@ -75,6 +81,8 @@ public class DynamoBridgeService implements InferenceBackend {
       ChaosComponent chaosComponent) {
     this.tritonBackend = tritonBackend;
     this.dynamoBackend = dynamoBackend;
+    this.metalBackend = metalBackend;
+    this.speculativeOrchestrator = speculativeOrchestrator;
     this.meterRegistry = meterRegistry;
     this.resilienceComponent = resilienceComponent;
     this.adaptiveBatcher = adaptiveBatcher;
@@ -113,17 +121,27 @@ public class DynamoBridgeService implements InferenceBackend {
   public float infer(float value, String sessionId, String modelName) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     try {
-        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName, com.velo.sentinel.model.PriorityTier.INTERACTIVE, 0));
+        return InferenceContext.runInContext(safeSession, () -> orchestrateInference(value, safeSession, modelName, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16, false));
     } catch (Exception e) {
         throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
     }
   }
 
   @Override
-  public float infer(float value, String sessionId, String modelName, com.velo.sentinel.model.PriorityTier priority, int complexity) {
+  public float infer(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
+      return sentinelExecute(value, sessionId, modelName, priority, complexity, ModelPrecision.FP16, false);
+  }
+
+  @Override
+  public float infer(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision) {
+      return sentinelExecute(value, sessionId, modelName, priority, complexity, precision, false);
+  }
+
+  @Override
+  public float sentinelExecute(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
     String safeSession = (sessionId != null) ? sessionId : "anonymous";
     try {
-        return InferenceContext.runInContext(safeSession, () -> executeInference(value, safeSession, modelName, priority, complexity));
+        return InferenceContext.runInContext(safeSession, () -> orchestrateInference(value, safeSession, modelName, priority, complexity, precision, useAgenticOptimization));
     } catch (Exception e) {
         throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
     }
@@ -139,14 +157,31 @@ public class DynamoBridgeService implements InferenceBackend {
    * @param priority The priority tier (SLA aware).
    * @return The final prediction.
    */
-  private float executeInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
+  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
     RoutingMode effectiveMode = routingMode;
     
+    // HYBRID-ROUTING: Offload small or "privacy-sensitive" prompts to local M3 (Metal)
+    if (sessionId.startsWith("private-")) {
+        log.info("HYBRID-ROUTING [Session: {}]: Request is local-eligible. Offloading to M3 GPU (Metal).", sessionId);
+        return metalBackend.infer(value, sessionId, modelName);
+    }
+
+    // SPECULATIVE-DECODING: Orchestrate local M3 Drafter + Cloud Target
+    if (useAgenticOptimization && effectiveMode == RoutingMode.DYNAMO) {
+        log.info("SPECULATIVE-DECODING [Session: {}]: Speculative mode active. Orchestrating Drafter/Target.", sessionId);
+        return speculativeOrchestrator.executeSpeculative(value, sessionId, modelName, dynamoBackend);
+    }
+
     // CONTEXTUAL-ROUTING: If complexity is low, force TRITON to save cost
     if (complexity < 50 && complexity > 0) {
         log.info("CONTEXTUAL-ROUTING [Session: {}]: Complexity {} is below threshold (50). Routing to Efficiency Node (TRITON).", 
             sessionId, complexity);
         effectiveMode = RoutingMode.TRITON;
+    }
+
+    // QUANTIZATION-AWARE: Log precision intent (In real scenario, we'd pick a specific model variation)
+    if (precision != com.velo.sentinel.model.ModelPrecision.FP16) {
+        log.info("QUANTIZATION-AWARE [Session: {}]: Routing to {} optimized backend.", sessionId, precision);
     }
     
     // SAFETY-SWITCH: If accuracy drift is detected, veto Dynamo and force Triton
@@ -171,7 +206,7 @@ public class DynamoBridgeService implements InferenceBackend {
           try {
             // Orchestrate with Hedging if enabled
             if (hedgingEnabled && finalMode != RoutingMode.TRITON) {
-              return executeHedgedInference(value, sessionId, modelName, finalMode, priority, complexity);
+              return executeHedgedInference(value, sessionId, modelName, finalMode, priority, complexity, precision, useAgenticOptimization);
             }
 
             float result = switch (finalMode) {
@@ -204,15 +239,23 @@ public class DynamoBridgeService implements InferenceBackend {
     });
   }
 
-  private float executeInference(float value, String sessionId, String modelName) {
-      return executeInference(value, sessionId, modelName, com.velo.sentinel.model.PriorityTier.INTERACTIVE, 0);
+  private float orchestrateInference(float value, String sessionId, String modelName) {
+      return orchestrateInference(value, sessionId, modelName, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16, false);
+  }
+
+  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity) {
+      return orchestrateInference(value, sessionId, modelName, priority, complexity, ModelPrecision.FP16, false);
+  }
+
+  private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision) {
+      return orchestrateInference(value, sessionId, modelName, priority, complexity, precision, false);
   }
 
   /**
    * Hedged Inference: Shaves the tail of the latency distribution.
    * Starts primary, and if it exceeds delayMs, starts a second request.
    */
-  private float executeHedgedInference(float value, String sessionId, String modelName, RoutingMode mode, com.velo.sentinel.model.PriorityTier priority, int complexity) {
+  private float executeHedgedInference(float value, String sessionId, String modelName, RoutingMode mode, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
     log.debug("HEDGING-INIT [Session: {}]: Hedging enabled. Delay: {}ms", sessionId, hedgingDelayMs);
 
     CompletableFuture<Float> primary = CompletableFuture.supplyAsync(() -> {

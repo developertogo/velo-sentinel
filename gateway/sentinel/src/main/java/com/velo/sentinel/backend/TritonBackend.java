@@ -4,6 +4,8 @@ import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.grpc.ModelInferResponse;
 import com.velo.sentinel.context.InferenceContext;
 
+import com.velo.sentinel.model.PriorityTier;
+import com.velo.sentinel.model.ModelPrecision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -64,5 +66,10 @@ public class TritonBackend implements InferenceBackend {
         return ByteBuffer.wrap(rawBytes)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .getFloat();
+    }
+
+    @Override
+    public float sentinelExecute(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
+        return infer(value, sessionId, modelName);
     }
 }
