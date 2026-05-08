@@ -35,7 +35,9 @@ public class DynamoGrpcClient {
      */
     @PostConstruct
     public void init() {
-        channel = ManagedChannelBuilder.forAddress(host, port)
+        String target = "dns:///" + host + ":" + port;
+        channel = ManagedChannelBuilder.forTarget(target)
+                .defaultLoadBalancingPolicy("round_robin")
                 .usePlaintext()
                 .build();
         blockingStub = DynamoServiceGrpc.newBlockingStub(channel);
