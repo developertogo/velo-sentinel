@@ -72,9 +72,12 @@ public class SentinelCanaryTests {
         when(spanBuilder.setAttribute(anyString(), anyString())).thenReturn(spanBuilder);
         when(spanBuilder.startSpan()).thenReturn(mock(io.opentelemetry.api.trace.Span.class));
 
+        SemanticCacheService semanticCache = mock(SemanticCacheService.class);
+        when(semanticCache.checkCache(anyString())).thenReturn(null);
+
         bridgeService = new DynamoBridgeService(
             tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, 
-            adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, mock(KVCacheRegistry.class)
+            adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, mock(KVCacheRegistry.class), semanticCache
         );
 
         ReflectionTestUtils.setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.CANARY);

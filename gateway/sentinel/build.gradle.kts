@@ -5,11 +5,21 @@ plugins {
 
   // gRPC + protobuf code generation
   id("com.google.protobuf") version "0.9.4"
+  id("me.champeau.jmh") version "0.7.3"
   jacoco
 }
 
 group = "com.velo.sentinel"
 version = "0.0.1-SNAPSHOT"
+
+jmh {
+    benchmarkMode.set(listOf("avgt"))
+    timeUnit.set("us")
+    warmupIterations.set(2)
+    iterations.set(3)
+    fork.set(1)
+    failOnError.set(true)
+}
 
 java {
 	toolchain {
@@ -77,6 +87,10 @@ dependencies {
 
   // Enterprise Security
   implementation("org.springframework.boot:spring-boot-starter-security")
+
+  // JMH
+  jmh("org.openjdk.jmh:jmh-core:1.37")
+  jmh("org.openjdk.jmh:jmh-generator-annprocess:1.37")
 }
 
 configure<com.google.protobuf.gradle.ProtobufExtension> {

@@ -5,6 +5,8 @@ import com.velo.sentinel.backend.TritonBackend;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.AdaptiveBatcher;
 import com.velo.sentinel.service.ChaosComponent;
+import com.velo.sentinel.service.SemanticCacheService;
+import com.velo.sentinel.service.KVCacheRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -42,7 +44,16 @@ public class SentinelHedgingTests {
         @Bean @Primary public TritonBackend tritonBackend() { return mock(TritonBackend.class); }
         @Bean @Primary public AdaptiveBatcher adaptiveBatcher() { return mock(AdaptiveBatcher.class); }
         @Bean @Primary public ChaosComponent chaosComponent() { return mock(ChaosComponent.class); }
-        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { return mock(com.velo.sentinel.service.KVCacheRegistry.class); }
+        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { 
+            com.velo.sentinel.service.KVCacheRegistry registry = mock(com.velo.sentinel.service.KVCacheRegistry.class);
+            when(registry.isSessionWarm(anyString())).thenReturn(false);
+            return registry;
+        }
+        @Bean @Primary public com.velo.sentinel.service.SemanticCacheService semanticCacheService() { 
+            com.velo.sentinel.service.SemanticCacheService mockCache = mock(com.velo.sentinel.service.SemanticCacheService.class);
+            when(mockCache.checkCache(anyString())).thenReturn(null);
+            return mockCache;
+        }
     }
 
     @BeforeEach

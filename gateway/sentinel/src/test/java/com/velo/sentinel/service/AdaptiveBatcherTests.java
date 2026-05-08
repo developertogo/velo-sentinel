@@ -30,7 +30,7 @@ public class AdaptiveBatcherTests {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger callCount = new AtomicInteger(0);
 
-        // Submit 3 requests (Prefill path)
+        // Submit 3 requests
         CompletableFuture<Float> f1 = batcher.submit(1.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             callCount.incrementAndGet();
             return items.stream().map(i -> i.value() * 2).toList();
@@ -57,7 +57,7 @@ public class AdaptiveBatcherTests {
     void testBatcherTimeout() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         
-        // Submit only 1 request (won't hit maxBatchSize=32 for prefill)
+        // Submit only 1 request (won't hit maxBatchSize=16)
         CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             return items.stream().map(i -> i.value() * 10).toList();
         });
@@ -117,7 +117,7 @@ public class AdaptiveBatcherTests {
     void testMaxBatchSizeTriggersExecution() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger batchCount = new AtomicInteger(0);
-        int totalTasks = 64; // Exactly 2 batches of 32 for prefill queue
+        int totalTasks = 64; // Exactly 2 batches of 32
         
         List<CompletableFuture<Float>> futures = new ArrayList<>();
         for (int i = 0; i < totalTasks; i++) {

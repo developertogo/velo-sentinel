@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * ResilientStreamBridge: Orchestrates mid-stream failovers.
  * 
- * If a primary AI stream stutters or fails, this bridge automatically 
+ * If a primary AI stream stutters or fails, this bridge automatically
  * re-homes the session to a ground-truth backend and resumes generation
  * from the last successful token.
  */
@@ -24,8 +24,9 @@ public class ResilientStreamBridge {
     private final StreamingInferenceBackend primaryBackend;
     private final StreamingInferenceBackend fallbackBackend;
 
-    public ResilientStreamBridge(@org.springframework.beans.factory.annotation.Qualifier("primaryStreamingBackend") StreamingInferenceBackend primaryBackend, 
-                                @org.springframework.beans.factory.annotation.Qualifier("fallbackStreamingBackend") StreamingInferenceBackend fallbackBackend) {
+    public ResilientStreamBridge(
+            @org.springframework.beans.factory.annotation.Qualifier("primaryStreamingBackend") StreamingInferenceBackend primaryBackend,
+            @org.springframework.beans.factory.annotation.Qualifier("fallbackStreamingBackend") StreamingInferenceBackend fallbackBackend) {
         this.primaryBackend = primaryBackend;
         this.fallbackBackend = fallbackBackend;
     }
@@ -36,22 +37,24 @@ public class ResilientStreamBridge {
             public void subscribe(Flow.Subscriber<? super StreamEvent> subscriber) {
                 SubmissionPublisher<StreamEvent> externalPublisher = new SubmissionPublisher<>();
                 externalPublisher.subscribe(subscriber);
-                
+
                 List<StreamEvent> tokenBuffer = new ArrayList<>();
                 AtomicInteger lastTokenIndex = new AtomicInteger(-1);
 
-                log.info("STREAM-ORCHESTRATION [Session: {}]: Starting resilient stream for model {}.", sessionId, modelName);
+                log.info("STREAM-ORCHESTRATION [Session: {}]: Starting resilient stream for model {}.", sessionId,
+                        modelName);
 
-                // Phase 1: Try Primary (Dynamo)
-                attemptStream(primaryBackend, input, sessionId, modelName, externalPublisher, tokenBuffer, lastTokenIndex, true);
+                // Try Primary (Dynamo)
+                attemptStream(primaryBackend, input, sessionId, modelName, externalPublisher, tokenBuffer,
+                        lastTokenIndex, true);
             }
         };
     }
 
     private void attemptStream(StreamingInferenceBackend backend, float input, String sessionId, String modelName,
-                              SubmissionPublisher<StreamEvent> publisher, List<StreamEvent> buffer, 
-                              AtomicInteger lastIndex, boolean isPrimary) {
-        
+            SubmissionPublisher<StreamEvent> publisher, List<StreamEvent> buffer,
+            AtomicInteger lastIndex, boolean isPrimary) {
+
         backend.streamInfer(input, sessionId, modelName).subscribe(new Flow.Subscriber<>() {
             private Flow.Subscription subscription;
 
@@ -72,15 +75,17 @@ public class ResilientStreamBridge {
             @Override
             public void onError(Throwable throwable) {
                 if (isPrimary) {
-                    log.warn("STREAM-FAILOVER [Session: {}]: Primary backend failed at token {}. Reason: {}. Re-homing to Fallback...", 
-                        sessionId, lastIndex.get(), throwable.getMessage());
-                    
-                    // Phase 2: Resume from Fallback (Triton)
+                    log.warn(
+                            "STREAM-FAILOVER [Session: {}]: Primary backend failed at token {}. Reason: {}. Re-homing to Fallback...",
+                            sessionId, lastIndex.get(), throwable.getMessage());
+
+                    // Resume from Fallback (Triton)
                     // In a real LLM, we would adjust the 'input' to include the buffer content.
                     // For this float-based prototype, we'll just resume the call.
                     attemptStream(fallbackBackend, input, sessionId, modelName, publisher, buffer, lastIndex, false);
                 } else {
-                    log.error("STREAM-CRITICAL [Session: {}]: Fallback backend also failed. Terminating stream.", sessionId);
+                    log.error("STREAM-CRITICAL [Session: {}]: Fallback backend also failed. Terminating stream.",
+                            sessionId);
                     publisher.closeExceptionally(throwable);
                 }
             }
