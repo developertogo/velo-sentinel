@@ -6,6 +6,8 @@ import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.client.DynamoGrpcClient;
 import com.velo.sentinel.grpc.ModelInferResponse;
 import com.velo.sentinel.service.AdaptiveBatcher;
+import com.velo.sentinel.service.ChaosComponent;
+import com.velo.sentinel.service.DriftMonitor;
 import com.velo.sentinel.service.DynamoBridgeService;
 import com.velo.sentinel.service.DynamoResilienceComponent;
 import com.velo.sentinel.service.KVCacheRegistry;
@@ -43,6 +45,8 @@ public class SentinelInferenceTests {
     private MeterRegistry meterRegistry;
     private Tracer tracer;
     private RequestThrottler throttler;
+    private DriftMonitor driftMonitor;
+    private ChaosComponent chaosComponent;
     private org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @BeforeEach
@@ -54,7 +58,23 @@ public class SentinelInferenceTests {
         throttler = mock(RequestThrottler.class);
         redisTemplate = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
         cacheRegistry = new KVCacheRegistry(redisTemplate);
-        adaptiveBatcher = new AdaptiveBatcher();
+        adaptiveBatcher = mock(AdaptiveBatcher.class);
+        driftMonitor = mock(DriftMonitor.class);
+        chaosComponent = mock(ChaosComponent.class);
+
+        // Mock adaptiveBatcher.submit to return a future that respects task execution time
+        when(adaptiveBatcher.submit(anyFloat(), anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
+            float val = invocation.getArgument(0);
+            String session = invocation.getArgument(1);
+            String model = invocation.getArgument(2);
+            java.util.function.Function<java.util.List<com.velo.sentinel.service.AdaptiveBatcher.BatchItem>, java.util.List<Float>> task = invocation.getArgument(4);
+            
+            return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                com.velo.sentinel.service.AdaptiveBatcher.BatchItem item = new com.velo.sentinel.service.AdaptiveBatcher.BatchItem(val, session, model);
+                java.util.List<Float> results = task.apply(java.util.List.of(item));
+                return results.get(0);
+            });
+        });
 
         // Mock Tracer to avoid NPEs
         SpanBuilder mockSpanBuilder = mock(SpanBuilder.class);
@@ -73,7 +93,7 @@ public class SentinelInferenceTests {
         dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
         resilienceComponent = spy(new DynamoResilienceComponent(dynamoBackend, tritonBackend));
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent);
 
         // Manually initialize @Value fields for unit tests
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
@@ -330,5 +350,26 @@ public class SentinelInferenceTests {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * Workflow: Chaos Engineering (Fault Injection).
+     * Verification: Validates that when ChaosComponent injects a synthetic failure,
+     * the system correctly fails open to Triton ground truth.
+     */
+    @Test
+    void testChaosInjection_Failover() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
+        setupTritonMock(10.0f);
+        
+        // Enable chaos and force a failure injection
+        doThrow(new RuntimeException("CHAOS-INJECTION: Synthetic failure"))
+            .when(chaosComponent).maybeInjectChaos(anyString());
+
+        float result = bridgeService.infer(5.0f, "chaos-session", "simple");
+
+        // Should fall back to Triton (10.0) despite DYNAMO mode being active
+        assertThat(result).isEqualTo(10.0f);
+        verify(tritonClient, atLeastOnce()).infer(eq(5.0f), anyString());
     }
 }

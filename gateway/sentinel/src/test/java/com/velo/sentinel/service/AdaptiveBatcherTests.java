@@ -1,5 +1,8 @@
 package com.velo.sentinel.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,10 +18,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class AdaptiveBatcherTests {
     private static final Logger log = LoggerFactory.getLogger(AdaptiveBatcherTests.class);
+    private MeterRegistry meterRegistry;
+
+    @BeforeEach
+    void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
+    }
 
     @Test
     void testSuccessfulBatching() throws Exception {
-        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger callCount = new AtomicInteger(0);
 
         // Submit 3 requests
@@ -46,7 +55,7 @@ public class AdaptiveBatcherTests {
 
     @Test
     void testBatcherTimeout() throws Exception {
-        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         
         // Submit only 1 request (won't hit maxBatchSize=16)
         CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", items -> {
@@ -59,7 +68,7 @@ public class AdaptiveBatcherTests {
 
     @Test
     void testBatchProcessorFailure() {
-        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         
         CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", items -> {
             throw new RuntimeException("Backend Down");
@@ -70,7 +79,7 @@ public class AdaptiveBatcherTests {
 
     @Test
     void testHighConcurrencyBatching() throws Exception {
-        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         int taskCount = 100;
         List<CompletableFuture<Float>> futures = new ArrayList<>();
 
@@ -89,7 +98,7 @@ public class AdaptiveBatcherTests {
 
     @Test
     void testPriorityOrdering() throws Exception {
-        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         
         // We will mock the timing behavior by submitting a background task, sleeping for 1ms, then a realtime task
         // Because of the maxWaitMs logic, they might get batched together, but let's see.
@@ -106,7 +115,7 @@ public class AdaptiveBatcherTests {
     
     @Test
     void testMaxBatchSizeTriggersExecution() throws Exception {
-        AdaptiveBatcher batcher = new AdaptiveBatcher();
+        AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger batchCount = new AtomicInteger(0);
         int totalTasks = 32; // Exactly 2 batches of 16
         
