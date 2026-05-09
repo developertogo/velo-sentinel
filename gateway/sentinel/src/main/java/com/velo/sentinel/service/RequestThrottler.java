@@ -19,6 +19,9 @@ public class RequestThrottler {
     private final RateLimiterRegistry registry;
     private final ConcurrentHashMap<String, RateLimiter> sessionLimiters = new ConcurrentHashMap<>();
 
+    /**
+     * Initializes the throttler with a default configuration of 10 requests per second.
+     */
     public RequestThrottler() {
         // Default Config: 10 requests per 1-second window
         RateLimiterConfig config = RateLimiterConfig.custom()
@@ -32,6 +35,7 @@ public class RequestThrottler {
     /**
      * Executes a task if the session has remaining quota.
      * 
+     * @param <T> The result type of the task.
      * @param sessionId The session identifier to throttle.
      * @param task The task to execute.
      * @return The result of the task.

@@ -50,6 +50,11 @@ public class AdaptiveBatcher {
     private final Thread prefillThread;
     private final Thread decodeThread;
 
+    /**
+     * Initializes the AdaptiveBatcher with dedicated virtual threads.
+     * 
+     * @param meterRegistry Registry for enqueuing backpressure metrics.
+     */
     public AdaptiveBatcher(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
 
@@ -65,6 +70,9 @@ public class AdaptiveBatcher {
                 .start(() -> processLoop("DECODE",  decodeQueue,  MAX_DECODE_BATCH_SIZE,  DECODE_WAIT_MS));
     }
 
+    /**
+     * Gracefully shuts down the batcher, allowing in-flight requests to drain.
+     */
     @PreDestroy
     public void shutdown() {
         log.info("SHUTDOWN: AdaptiveBatcher draining disaggregated queues...");
@@ -118,6 +126,12 @@ public class AdaptiveBatcher {
 
     /**
      * Convenience overload: defaults to {@link PriorityTier#INTERACTIVE} and prefill routing.
+     * 
+     * @param value          The input embedding value.
+     * @param sessionId      The session ID.
+     * @param modelName      The model name.
+     * @param batchProcessor The function to execute the batch.
+     * @return A future resolving to the inference result.
      */
     public CompletableFuture<Float> submit(
             float value,
@@ -202,18 +216,26 @@ public class AdaptiveBatcher {
     /**
      * Weighted backpressure factor: prefill depth counts 2× (more compute-expensive).
      * Consumed by the Sentinel HPA adapter and Grafana dashboards.
+     * 
+     * @return A calculated score representing current load pressure.
      */
     public double getBackpressureFactor() {
         return (prefillQueue.size() * 2.0 + decodeQueue.size()) / 10.0;
     }
 
-    /** Rough concurrency score relative to a soft limit of 64 in-flight tasks. */
+    /** 
+     * Rough concurrency score relative to a soft limit of 64 in-flight tasks. 
+     * 
+     * @return Percentage of concurrency headroom utilized.
+     */
     public double getConcurrencyScore() {
         return (double) (prefillQueue.size() + decodeQueue.size()) / 64.0;
     }
 
     /**
      * Minimum SLA headroom (ms) across both queues — used for proactive back-pressure.
+     * 
+     * @return Time in milliseconds until the most urgent task violates its SLA.
      */
     public double calculateSlaHeadroom() {
         InferenceTask pTask = prefillQueue.peek();
@@ -228,6 +250,14 @@ public class AdaptiveBatcher {
     // Data records
     // -------------------------------------------------------------------------
 
+    /**
+     * BatchItem: Represents a single unit of work within a coalesced batch.
+     * 
+     * @param value The input data.
+     * @param sessionId The session identifier.
+     * @param modelName The target model.
+     * @param isPrefill Whether this item belongs to the prefill phase.
+     */
     public record BatchItem(float value, String sessionId, String modelName, boolean isPrefill) {}
 
     private record InferenceTask(

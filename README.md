@@ -1,18 +1,33 @@
 # Velo-Sentinel
 
-> High-performance Java 25 Virtual Thread-based inference gateway serving as the critical bridge for transitioning from legacy NVIDIA Triton to the **NVIDIA Dynamo 1.0** disaggregated inference framework.
+> **Velo-Sentinel**: A high-performance inference gateway designed for Tier-1 AI organizations. Built on **Java 25 Virtual Threads**, it serves as the mission-critical orchestration layer for transitioning from legacy [NVIDIA Triton](https://github.com/triton-inference-server/server) to the next-generation [NVIDIA Dynamo 1.x](https://github.com/ai-dynamo/dynamo) disaggregated inference framework.
+
+## 🚀 Tier-1 Readiness Dashboard
+The following features are production-ready. Click the links for detailed documentation.
+
+| Phase | Focus |
+| :--- | :--- |
+| **Concurrency** | **[🏗️ Architecture & Disaggregated Serving](gateway/sentinel/docs/DISAGGREGATED_SERVING.md)** — Prefill/Decode separation and cache-aware routing.<br>**[🏛️ Deep-Dive Architecture](gateway/sentinel/docs/ARCHITECTURE.md)** — Internal component breakdown and thread model.<br>**[📊 Observability & Metrics](gateway/sentinel/docs/OBSERVABILITY.md)** — Micrometer, Jaeger tracing, and Prometheus. |
+| **Resilience** | **[🛡️ Resilience & Chaos Engineering](gateway/sentinel/docs/RESILIENCE.md)** — Circuit breakers, hedging, and fault injection.<br>**[🌍 Multi-Cloud Disaster Recovery](gateway/sentinel/docs/DISASTER_RECOVERY.md)** — Cross-cloud failover strategies. |
+| **Efficiency** | **[⚖️ Adaptive Batching Strategies](gateway/sentinel/docs/BATCHING.md)** — Optimizing TFLOPS via intelligent request grouping.<br>**[⚡ SLA-Aware Priority Queuing](gateway/sentinel/docs/PRIORITY_QUEUING.md)** — Dynamic deadline resolution and priority-based scheduling.<br>**[⚙️ NVIDIA Dynamo-Aware Scaling](gateway/sentinel/docs/SCALING.md)** — Predictive HPA and backend pressure metrics. |
+| **Governance** | **[🔐 Enterprise Governance & Privacy](gateway/sentinel/docs/GOVERNANCE.md)** — PII scrubbing, authentication, and audit logging.<br>**[🔒 Security & Authentication](gateway/sentinel/docs/SECURITY.md)** — API Key management and endpoint protection. |
+| **Hardware** | **[🚀 Performance & Benchmarks](gateway/sentinel/docs/PERFORMANCE.md)** — Latency results and hardware-specific optimizations **[Velo-Core](https://github.com/developertogo/velo-core)**. |
 
 ## Mission
-To provide a **foundational computational platform** for high-scale ML/AI applications, serving as the critical orchestration layer for transitioning from legacy NVIDIA Triton to the next-generation **NVIDIA Dynamo** disaggregated inference framework.
+To provide a **foundational computational platform** for global-scale ML/AI applications, bridging the gap between legacy infrastructure and disaggregated, hardware-aware serving through the **Four Pillars of Inference Scale**: Concurrency, Resilience, Efficiency, and Governance.
+
+---
 
 ## Key Objectives
 - **Research-to-Production Bridge**: Streamlines the deployment of large foundation models (LLMs) by abstracting the complexity of disaggregated inference backends.
 - **Scalable Orchestration Layer**: A sophisticated model serving system providing foundational abstractions that ensure consistency across distributed inference nodes.
 - **High-Throughput Execution**: Leveraging **Java 25 Virtual Threads** (Project Loom) to achieve L5-tier concurrency, enabling high-traffic model serving with minimal overhead.
-- **Cost & Latency Optimization**: Integrated **Adaptive Batching**, **SLA-Aware Priority Queuing**, and **Semantic Caching** to maximize GPU utilization and minimize inference costs.
-- **Production-Grade Resilience**: Multi-layered fault tolerance (Fail-Open/Closed), **Request Hedging**, and **Multi-Cloud Disaster Recovery** to maintain high availability in business-critical environments.
+- **Speculative Acceleration**: Orchestrating multi-model "Draft & Verify" workflows to achieve superior token-generation speeds.
+- **Cost & Latency Optimization**: Integrated **Adaptive Batching**, **SLA-Aware Priority Queuing**, and **Semantic Caching** to maximize GPU utilization.
+- **Production-Grade Resilience**: Multi-layered fault tolerance (Fail-Open/Closed), **Request Hedging**, and **Multi-Cloud Disaster Recovery**.
 - **Enterprise Governance**: Proactive privacy protection via **PII Scrubbing** and **Immutable Audit Logging** for regulatory compliance.
-- **Hybrid Hardware Orchestration**: Seamlessly routing between Cloud GPUs and **Local Metal/AMX acceleration** for edge-aware inference.
+- **Safety & Observability**: Real-time **Accuracy Drift Monitoring** and **Shadow-Mode Validation** to ensure model parity during migration.
+- **Hybrid Hardware Orchestration**: Seamlessly routing between Cloud GPUs and **Local Metal/AMX acceleration** ([Velo-Core](https://github.com/developertogo/velo-core)) for edge-aware inference.
 
 ## Architecture
 Velo-Sentinel follows modern high-performance architectural patterns, prioritizing **Structured Concurrency** over legacy Reactive patterns.
@@ -32,6 +47,7 @@ graph TD
         Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
         TaskScope -->|Primary| Dynamo[DynamoBackend]
         TaskScope -->|Shadow| Triton[TritonBackend]
+        Bridge -->|Hybrid Path| Metal[MetalBackend]
         
         Dynamo -->|Session Lookup| Redis[(Redis KV-Registry)]
         Redis -.->|Cache Status| Dynamo
@@ -39,12 +55,15 @@ graph TD
         Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
         RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
         RC -.->|Fallback| Triton
+        
+        Metal -->|Java FFM API| VeloCore[Velo-Core Engine]
     end
     
     Triton --> T_GRPC[Triton gRPC Client]
     
     D_GRPC --> DB[(Dynamo Backend)]
     T_GRPC --> TB[(Legacy Triton Backend)]
+    VeloCore -->|Apple Silicon| GPU[Metal / AMX Acceleration]
     
     Bridge --> Metrics[Micrometer Metrics]
     Metrics --> Prometheus[Prometheus / Grafana]
@@ -53,11 +72,13 @@ graph TD
     classDef secondary fill:#e8f5e9,stroke:#4caf50,stroke-width:2px,color:#1b5e20;
     classDef storage fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#4a148c;
     classDef user fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#e65100;
+    classDef hardware fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#f57f17;
 
     class User user;
     class Controller,Bridge primary;
-    class Dynamo,Triton secondary;
+    class Dynamo,Triton,Metal secondary;
     class Redis,DB,TB,Metrics,Prometheus storage;
+    class VeloCore,GPU hardware;
 ```
 </details>
 
@@ -74,6 +95,7 @@ graph TD
         Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
         TaskScope -->|Primary| Dynamo[DynamoBackend]
         TaskScope -->|Shadow| Triton[TritonBackend]
+        Bridge -->|Hybrid Path| Metal[MetalBackend]
         
         Dynamo -->|Session Lookup| Redis[(Redis KV-Registry)]
         Redis -.->|Cache Status| Dynamo
@@ -81,12 +103,15 @@ graph TD
         Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
         RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
         RC -.->|Fallback| Triton
+        
+        Metal -->|Java FFM API| VeloCore[Velo-Core Engine]
     end
     
     Triton --> T_GRPC[Triton gRPC Client]
     
     D_GRPC --> DB[(Dynamo Backend)]
     T_GRPC --> TB[(Legacy Triton Backend)]
+    VeloCore -->|Apple Silicon| GPU[Metal / AMX Acceleration]
     
     Bridge --> Metrics[Micrometer Metrics]
     Metrics --> Prometheus[Prometheus / Grafana]
@@ -95,18 +120,15 @@ graph TD
     classDef secondary fill:#145a32,stroke:#2ecc71,stroke-width:2px,color:#fff;
     classDef storage fill:#4a235a,stroke:#9b59b6,stroke-width:2px,color:#fff;
     classDef user fill:#6e2c00,stroke:#e67e22,stroke-width:2px,color:#fff;
+    classDef hardware fill:#7d6608,stroke:#f1c40f,stroke-width:2px,color:#fff;
 
     class User user;
     class Controller,Bridge primary;
-    class Dynamo,Triton secondary;
+    class Dynamo,Triton,Metal secondary;
     class Redis,DB,TB,Metrics,Prometheus storage;
+    class VeloCore,GPU hardware;
 ```
 </details>
-
-### Resilience Features
-- **DynamoResilienceComponent**: Isolated resilience layer using Resilience4j `@CircuitBreaker`. Decouples fault tolerance from orchestration logic.
-- **Fail-Open Path**: Automatic fallback to legacy Triton ensures 100% availability during migration.
-- **AOP-Aware Proxying**: Fixed internal proxying issues via component isolation.
 
 ### KV-Cache Management
 - **Global Session Registry**: Leveraging **Redis** as a disaggregated KV-Cache registry to track session "Warmth" across the cluster.
@@ -118,12 +140,9 @@ graph TD
 - **Sticky Cache Routing**: Minimizes data transfer latency by directing requests to GPU nodes that already host the relevant **KV-Cache** in memory.
 - **Request Hedging**: Eliminates P99 latency outliers by automatically spawning parallel "hedged" requests if the primary backend stutters.
 - **Semantic Caching**: Reduces GPU load by >40% by returning cached results for semantically similar prompts using vector-based lookup.
-- **Native Metal/AMX Integration**: High-performance orchestration of local Apple Silicon hardware via Java 25 Foreign Function & Memory (FFM) API.
+- **Velo-Core Integration**: Velo-Sentinel acts as the primary gateway for [Velo-Core](https://github.com/developertogo/velo-core), a specialized Rust/C++ inference engine. This enables sub-millisecond latency for local workloads.
 
-### Governance & Compliance
-- **PII Scrubbing**: Automatic redaction of sensitive user data (names, emails, SSNs) before it leaves the enterprise security boundary.
-- **Immutable Audit Logging**: Write-only compliance logs capturing every inference decision, model choice, and drift metric.
-- **Multi-Cloud Disaster Recovery**: Automated failover to a **Standby** cluster in a secondary cloud provider (e.g., AWS to GCP) during regional outages.
+---
 
 ## Technology Stack
 - **Language**: Java 25 (Optimized for Virtual Threads)
@@ -132,13 +151,11 @@ graph TD
 - **Observability**: Micrometer (Registry-based metrics)
 - **Communication**: gRPC (Primary) & HTTP/REST (Legacy/Compatibility)
 - **Inference Backend**: NVIDIA Dynamo-Triton
-- **Serialization**: Protocol Buffers (Protobuf)
 - **Infrastructure**: Docker & Docker Compose
 
 ## Project Structure
 ```text
 .
-├── benchmarks/       # JMH Microbenchmarks and load testing suites
 ├── gateway/          # Java/Spring Boot Gateway Implementation
 ├── sdks/             # Multi-language SDKs (Python, Node.js, Java)
 ├── scripts/          # Automation scripts (SDK gen, deployment)
@@ -150,7 +167,6 @@ graph TD
 
 ### Prerequisites
 - JDK 25
-- Spring Boot 4
 - Docker & Docker Compose
 - Gradle 8.x (provided via wrapper)
 
@@ -170,93 +186,30 @@ graph TD
    ```bash
    ./scripts/sdk-gen.sh
    ```
-   This generates high-performance clients in `sdks/python` and `sdks/node`.
+   This generates high-performance clients in `sdks/python`, `sdks/node`, and `sdks/java`.
 
-## Resilience & Chaos Simulation
-Velo-Sentinel is hardened with a dedicated `DynamoResilienceComponent` to handle fault tolerance.
-
-### Running Chaos Simulation
-1. Start the gateway in DYNAMO mode:
+4. **Generate API Documentation (Javadoc)**:
    ```bash
-   ./gradlew bootRun --args='--spring.profiles.active=dev --velo.sentinel.routing-mode=DYNAMO'
+   # For the Gateway
+   cd gateway/sentinel && ./gradlew javadoc
+   
+   # For the Java SDK
+   cd sdks/java && ./gradlew javadoc
    ```
-2. Trigger Fail-Open (Simulate Dynamo Backend Crash):
-   Use a session ID starting with `chaos-fail` to trigger a hard error in the Mock server.
+   *Output: `build/docs/javadoc/index.html` in respective modules.*
+
+5. **Verify System Integrity (Tests & Coverage)**:
    ```bash
-   curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" -d '{"sessionId": "chaos-fail-01", "value": 10}'
+   cd gateway/sentinel
+   ./gradlew clean test build
    ```
-   *Expected Result*: Status `SUCCESS`, prediction `10.0` (Fallback to Triton).
-
-3. Trigger SLO Veto (Simulate High Latency):
-   Use a session ID starting with `chaos-slow` in SHADOW mode.
+   Generate test coverage report (Jacoco):
    ```bash
-   ./gradlew bootRun --args='--spring.profiles.active=dev --velo.sentinel.routing-mode=SHADOW'
-   curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" -d '{"sessionId": "chaos-slow-01", "value": 10}'
+   ./gradlew test jacocoTestReport
    ```
-   *Expected Result*: Status `SUCCESS`, prediction `10.0` (Triton Ground Truth). Check logs for `SHADOW-VETO`.
+   The report URL is: `file:///${PWD}/gateway/sentinel/build/reports/jacoco/test/html/index.html`
 
-### Failover Strategies
-Velo-Sentinel implements a layered resilience model. Every failure scenario has a defined, tested fallback path — no request should ever receive an unhandled error.
-
-| Scenario | Condition | Failover Behavior |
-|---|---|---|
-| **Dynamo Backend Crash** | `DYNAMO` or `SHADOW` mode; Dynamo gRPC throws | `DynamoResilienceComponent` circuit breaker trips → fall back to **Triton** |
-| **Triton Ground Truth Loss** | `SHADOW` mode; Triton `StructuredTaskScope` fails or times out | Fall back to **Dynamo** as a best-effort prediction (avoids retrying a known-broken backend) |
-| **Redis KV-Cache Outage** | `KVCacheRegistry` throws `RedisConnectionFailureException` | **Fail-Open** → treat every session as Cold Start; inference continues at slightly higher latency |
-| **Total System Outage** | Both Dynamo and Triton backends are unreachable | **Fail-Closed** → returns `503 Service Unavailable` with `BACKEND_OUTAGE` status code |
-| **Batching Failure** | `AdaptiveBatcher` timeout or processor exception | Fall back to a **direct, individual** `protectedDynamoCall` |
-| **SLA Deadline Exceeded** | Task sits in priority queue past its `PriorityTier` SLA | **SLA-Veto**: task is dropped with `TimeoutException`; GPU cycles are not wasted |
-
-#### Failover Decision Tree (Shadow Mode)
-```
-SHADOW request received
-    └─ Triton scope succeeds?
-        ├─ YES → return Triton result; compare Dynamo async (zero latency impact)
-        └─ NO  → Dynamo best-effort via resilienceComponent
-                    └─ Dynamo also fails?
-                        └─ resilienceComponent circuit breaker → Triton direct call
-```
-
-### Multi-Cloud Disaster Recovery (DR)
-Velo-Sentinel supports seamless cross-cloud failover to a standby region.
-
-1. **Configuration**: Set `triton.standby.host` and `triton.standby.port` in `application.yaml` (or via `STANDBY_HOST` env var).
-2. **Activation**: Switch the routing mode to `FAILOVER`:
-   ```bash
-   ./gradlew bootRun --args='--velo.sentinel.routing-mode=FAILOVER'
-   ```
-3. **Behavior**: Requests are routed to the `StandbyBackend`, which uses a dedicated gRPC channel with a 500ms failover timeout.
-
-### Enterprise Governance & Privacy
-- **Audit Logging**: Every inference decision is recorded in an immutable audit log (`AuditLoggerService`), capturing latency, model selection, and accuracy drift.
-- **PII Scrubbing**: The `PrivacyScrubberService` automatically redacts sensitive data from text prompts using high-performance regex/NLP patterns before the data leaves the security boundary.
-
-
-### Metrics & Observability
-- **KV-Cache Hits**: `sentinel:session:<id>` in Redis.
-- **Drift**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.drift`
-- **SLO Vetoes**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.shadow.timeout`
-- **Error Rates**: `curl http://localhost:8080/actuator/metrics/velo.sentinel.errors`
-- **Distributed Tracing (Jaeger)**: Access the UI at [http://localhost:16686](http://localhost:16686) to visualize `VeloInference` spans.
-
-#### Local Tracing Configuration
-If you do not want to run Jaeger, you can redirect traces to the console log by setting an environment variable:
-```bash
-export OTEL_TRACES_EXPORTER=logging
-./gradlew bootRun
-```
-
-### Testing SLA-Aware Priority Queuing
-You can inject the optional `priority` field into your payload to test the dynamic deadline resolution:
-```bash
-# High Priority (REALTIME SLA: 100ms)
-curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" \
-  -d '{"sessionId": "realtime-user", "value": 42, "priority": "REALTIME"}'
-
-# Low Priority (BACKGROUND SLA: 5000ms)
-curl -X POST http://localhost:8080/infer -H "Content-Type: application/json" \
-  -d '{"sessionId": "batch-job-1", "value": 42, "priority": "BACKGROUND"}'
-```
+---
 
 ## Intellectual Property
 This project was designed and implemented by `velo.com` as a technical demonstration of high-performance system architecture. All architectural decisions, performance optimizations, and code implementations are original work.

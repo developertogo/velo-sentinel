@@ -36,6 +36,7 @@ public class KVCacheRegistryTests {
     }
 
     @BeforeEach
+    @SuppressWarnings("deprecation")
     void setup() {
         LettuceConnectionFactory factory = new LettuceConnectionFactory("localhost", 6379);
         factory.afterPropertiesSet();

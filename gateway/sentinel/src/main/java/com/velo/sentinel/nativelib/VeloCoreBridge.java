@@ -9,19 +9,10 @@ import java.util.List;
 /**
  * VeloCoreBridge: The "Hardware-Aware" Native Bridge.
  * 
- * Uses Java 25 Foreign Function & Memory (FFM) API to orchestrate 
+ * Uses Java 25 Foreign Function &amp; Memory (FFM) API to orchestrate 
  * the Velo-Core Rust engine via zero-copy memory segments.
  */
 public class VeloCoreBridge implements AutoCloseable {
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LOOKUP;
-
-    static {
-        // In production, this would be loaded from a specific path or classpath
-        String libPath = System.getProperty("velo.core.lib.path", "/Users/chung/sandbox/anthropic/core/target/debug/libvelo_core.dylib");
-        LOOKUP = SymbolLookup.libraryLookup(Path.of(libPath), Arena.global());
-    }
 
     // Function Descriptors
     private static final FunctionDescriptor DESC_NEW = FunctionDescriptor.of(
@@ -57,13 +48,24 @@ public class VeloCoreBridge implements AutoCloseable {
     private final MemorySegment engineHandle;
     private final Arena arena;
 
-    public VeloCoreBridge(String modelName, long maxSlots, long maxContextTokens) {
+    /**
+     * Initializes the bridge and loads the native engine into memory.
+     * 
+     * @param nativeLib The library loader service.
+     * @param modelName The name of the model to load.
+     * @param maxSlots Maximum number of concurrent inference slots.
+     * @param maxContextTokens Maximum context length per slot.
+     */
+    public VeloCoreBridge(VeloNativeLibrary nativeLib, String modelName, long maxSlots, long maxContextTokens) {
         this.arena = Arena.ofShared();
         
-        this.veloCoreEngineNew = LOOKUP.find("velo_core_engine_new").map(s -> LINKER.downcallHandle(s, DESC_NEW)).orElseThrow();
-        this.veloCoreEngineFree = LOOKUP.find("velo_core_engine_free").map(s -> LINKER.downcallHandle(s, DESC_FREE)).orElseThrow();
-        this.veloCoreEngineGenerate = LOOKUP.find("velo_core_engine_generate").map(s -> LINKER.downcallHandle(s, DESC_GENERATE)).orElseThrow();
-        this.veloCoreFreeTokens = LOOKUP.find("velo_core_free_tokens").map(s -> LINKER.downcallHandle(s, DESC_FREE_TOKENS)).orElseThrow();
+        SymbolLookup lookup = nativeLib.getLookup();
+        Linker linker = nativeLib.getLinker();
+
+        this.veloCoreEngineNew = lookup.find("velo_core_engine_new").map(s -> linker.downcallHandle(s, DESC_NEW)).orElseThrow();
+        this.veloCoreEngineFree = lookup.find("velo_core_engine_free").map(s -> linker.downcallHandle(s, DESC_FREE)).orElseThrow();
+        this.veloCoreEngineGenerate = lookup.find("velo_core_engine_generate").map(s -> linker.downcallHandle(s, DESC_GENERATE)).orElseThrow();
+        this.veloCoreFreeTokens = lookup.find("velo_core_free_tokens").map(s -> linker.downcallHandle(s, DESC_FREE_TOKENS)).orElseThrow();
 
         try {
             MemorySegment cModelName = arena.allocateFrom(modelName);
@@ -79,6 +81,10 @@ public class VeloCoreBridge implements AutoCloseable {
 
     /**
      * Executes native inference via zero-copy memory segments.
+     * 
+     * @param prompt The list of input token IDs.
+     * @param maxNewTokens The maximum number of tokens to generate.
+     * @return A list of generated token IDs.
      */
     public List<Integer> generate(List<Integer> prompt, int maxNewTokens) {
         try {

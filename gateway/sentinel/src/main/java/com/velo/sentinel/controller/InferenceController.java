@@ -22,6 +22,12 @@ public class InferenceController {
     private final DynamoBridgeService bridgeService;
     private final com.velo.sentinel.streaming.ResilientStreamBridge streamBridge;
 
+    /**
+     * Initializes the InferenceController with required orchestration services.
+     * 
+     * @param bridgeService The primary service for resilient backend orchestration.
+     * @param streamBridge The bridge for handling asynchronous streaming events.
+     */
     public InferenceController(DynamoBridgeService bridgeService, 
                                com.velo.sentinel.streaming.ResilientStreamBridge streamBridge) {
         this.bridgeService = bridgeService;
@@ -30,6 +36,12 @@ public class InferenceController {
 
     /**
      * Resilient Streaming Endpoint (SSE).
+     * Provides real-time token updates over a persistent HTTP connection.
+     * 
+     * @param value The primary input value for the inference.
+     * @param sessionId Optional session identifier.
+     * @param model Optional model name (defaults to "simple").
+     * @return An SseEmitter emitting StreamEvent objects.
      */
     @org.springframework.web.bind.annotation.GetMapping(value = "/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(

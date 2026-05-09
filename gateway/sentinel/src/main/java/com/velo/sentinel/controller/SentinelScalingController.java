@@ -19,10 +19,20 @@ public class SentinelScalingController {
 
     private final AdaptiveBatcher adaptiveBatcher;
 
+    /**
+     * Initializes the controller with the adaptive batcher to monitor pressure.
+     * 
+     * @param adaptiveBatcher The service providing real-time load signals.
+     */
     public SentinelScalingController(AdaptiveBatcher adaptiveBatcher) {
         this.adaptiveBatcher = adaptiveBatcher;
     }
 
+    /**
+     * Returns predictive scaling metrics for external orchestration (e.g. Kubernetes HPA).
+     * 
+     * @return A map containing concurrency scores, backpressure factors, and scaling recommendations.
+     */
     @GetMapping("/scaling-metrics")
     public Map<String, Object> getScalingMetrics() {
         double concurrencyScore = adaptiveBatcher.getConcurrencyScore();

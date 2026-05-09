@@ -41,6 +41,9 @@ public class StandbyTritonClient {
     @Value("${triton.grpc.model-name:simple}")
     private String modelName;
 
+    /**
+     * Post-construct initialization to establish cross-cloud connectivity.
+     */
     @PostConstruct
     public void init() {
         String target = "dns:///" + host + ":" + port;
@@ -55,6 +58,13 @@ public class StandbyTritonClient {
         this.stub = GRPCInferenceServiceGrpc.newBlockingStub(channel);
     }
 
+    /**
+     * Executes an inference call to the failover region.
+     * 
+     * @param value The input float value.
+     * @param modelNameOverride The model name to target in the standby region.
+     * @return The raw ModelInferResponse from the standby Triton server.
+     */
     public ModelInferResponse infer(float value, String modelNameOverride) {
         try {
             log.warn("STANDBY-EXECUTION: Routing request to secondary cloud provider.");
@@ -83,6 +93,11 @@ public class StandbyTritonClient {
         }
     }
 
+    /**
+     * Health check for the standby region.
+     * 
+     * @return {@code true} if the standby region is live, {@code false} otherwise.
+     */
     public boolean checkHealth() {
         try {
             ServerLiveResponse response = stub.withDeadlineAfter(200, TimeUnit.MILLISECONDS)
@@ -94,6 +109,9 @@ public class StandbyTritonClient {
         }
     }
 
+    /**
+     * Pre-destroy hook to release standby network resources.
+     */
     @PreDestroy
     public void shutdown() {
         if (channel != null) {

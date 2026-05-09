@@ -19,6 +19,13 @@ public class AuditLoggerService {
 
     /**
      * Records an inference event metadata.
+     * 
+     * @param sessionId The user session identifier.
+     * @param modelName The name of the model utilized.
+     * @param backend The backend provider (TRITON, DYNAMO, METAL).
+     * @param latencyMs The total round-trip latency in milliseconds.
+     * @param drift The calculated accuracy drift relative to ground truth.
+     * @param status The execution status of the request.
      */
     public void logInference(String sessionId, String modelName, String backend, long latencyMs, double drift, String status) {
         Map<String, Object> metadata = new ConcurrentHashMap<>();

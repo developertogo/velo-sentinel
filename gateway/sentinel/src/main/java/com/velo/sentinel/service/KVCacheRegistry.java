@@ -21,13 +21,20 @@ public class KVCacheRegistry {
 
     private final StringRedisTemplate redisTemplate;
 
+    /**
+     * Initializes the registry with a Redis template.
+     * 
+     * @param redisTemplate The template for interacting with the Redis backing store.
+     */
     public KVCacheRegistry(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
     /**
      * Checks which worker node hosts the session's KV-Cache.
-     * Returns null if the session is Cold.
+     * 
+     * @param sessionId The identifier for the user session.
+     * @return The ID of the worker node where the cache is located, or {@code null} if the session is Cold.
      */
     public String getWorkerAffinity(String sessionId) {
         if (sessionId == null || sessionId.equals("anonymous")) {
@@ -41,12 +48,22 @@ public class KVCacheRegistry {
         }
     }
 
+    /**
+     * Determines if a session has an active (Warm) KV-Cache.
+     * 
+     * @param sessionId The session to check.
+     * @return {@code true} if the session is warm, {@code false} otherwise.
+     */
     public boolean isSessionWarm(String sessionId) {
         return getWorkerAffinity(sessionId) != null;
     }
 
     /**
      * Marks a session as active on a specific worker node.
+     * Sets a TTL to ensure inactive sessions eventually transition back to Cold.
+     * 
+     * @param sessionId The session identifier.
+     * @param workerNodeId The ID of the node currently hosting the session's state.
      */
     public void markSessionActive(String sessionId, String workerNodeId) {
         if (sessionId == null || sessionId.equals("anonymous")) {

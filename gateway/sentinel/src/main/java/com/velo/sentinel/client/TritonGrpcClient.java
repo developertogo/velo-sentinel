@@ -57,6 +57,9 @@ public class TritonGrpcClient {
 
     /**
      * Executes an inference call to the legacy Triton backend using the configured default model.
+     * 
+     * @param value The input float value.
+     * @return The raw ModelInferResponse from Triton.
      */
     public ModelInferResponse infer(float value) {
         return infer(value, modelName);
@@ -65,6 +68,10 @@ public class TritonGrpcClient {
     /**
      * Executes an inference call to the legacy Triton backend for a specific model.
      * Uses the standard ModelInferRequest pattern required by NVIDIA.
+     * 
+     * @param value The input float value.
+     * @param modelNameOverride The name of the model to target on the Triton server.
+     * @return The raw ModelInferResponse from Triton.
      */
     public ModelInferResponse infer(float value, String modelNameOverride) {
         try {
@@ -99,6 +106,8 @@ public class TritonGrpcClient {
 
     /**
      * Health check: Verifies if the Triton server is alive.
+     * 
+     * @return {@code true} if Triton is live, {@code false} otherwise.
      */
     public boolean checkHealth() {
         try {

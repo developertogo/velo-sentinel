@@ -1,21 +1,25 @@
-package com.velo.sentinel.client.resilient;
+package com.velo.sentinel.sdk;
 
-import com.velo.sentinel.model.InferenceRequest;
-import com.velo.sentinel.model.InferenceResponse;
-import com.velo.sentinel.model.PriorityTier;
-import com.velo.sentinel.model.ModelPrecision;
+import com.velo.sentinel.sdk.model.InferenceRequest;
+import com.velo.sentinel.sdk.model.InferenceResponse;
+import com.velo.sentinel.sdk.model.PriorityTier;
+import com.velo.sentinel.sdk.model.ModelPrecision;
 
 import java.util.concurrent.*;
-import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
- * ResilientSentinelClient: High-level SDK for Velo-Sentinel.
+ * ResilientSentinelClient: High-level Java SDK for the Velo-Sentinel Gateway.
  * 
- * Provides built-in:
- * - Exponential Backoff on 429/503 errors.
- * - Client-Side Hedging (Tail Latency Shaving).
- * - Circuit Breaking to protect the calling application.
+ * This client provides built-in resilience patterns to ensure high availability
+ * and low tail latency (P99) for mission-critical AI applications.
+ * 
+ * Features:
+ * <ul>
+ *   <li><b>Exponential Backoff</b>: Automatically retries on 429 (Rate Limit) and 503 (Overload) errors.</li>
+ *   <li><b>Client-Side Hedging</b>: Reduces tail latency by spawning a redundant request if the primary takes too long.</li>
+ *   <li><b>Virtual Thread Compatible</b>: Designed for non-blocking execution in modern JDK environments.</li>
+ * </ul>
  */
 public class ResilientSentinelClient {
     private static final Logger log = Logger.getLogger(ResilientSentinelClient.class.getName());
@@ -25,14 +29,29 @@ public class ResilientSentinelClient {
     private final int maxRetries;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
+    /**
+     * Constructs a new resilient client.
+     * 
+     * @param baseUrl The endpoint of the Sentinel Gateway (e.g., "http://localhost:8080").
+     * @param hedgingDelayMs Delay in milliseconds before spawning a hedge request. Set to 0 to disable.
+     * @param maxRetries Maximum number of retry attempts for failed requests.
+     */
     public ResilientSentinelClient(String baseUrl, long hedgingDelayMs, int maxRetries) {
         this.baseUrl = baseUrl;
         this.hedgingDelayMs = hedgingDelayMs;
         this.maxRetries = maxRetries;
     }
 
+    /**
+     * Executes an inference request asynchronously.
+     * 
+     * If hedging is enabled, a redundant request will be triggered if the primary call
+     * does not return within the specified {@code hedgingDelayMs}.
+     * 
+     * @param request The inference request configuration.
+     * @return A CompletableFuture containing the first successful response.
+     */
     public CompletableFuture<InferenceResponse> inferAsync(InferenceRequest request) {
-        // Implementation of Hedging
         CompletableFuture<InferenceResponse> primary = executeWithRetry(request, 0);
         
         if (hedgingDelayMs > 0) {
@@ -52,6 +71,18 @@ public class ResilientSentinelClient {
         }
 
         return primary;
+    }
+
+    /**
+     * Synchronous blocking call for simpler integrations.
+     * 
+     * @param request The inference request configuration.
+     * @return The inference response.
+     * @throws ExecutionException If the request fails.
+     * @throws InterruptedException If the execution is interrupted.
+     */
+    public InferenceResponse infer(InferenceRequest request) throws ExecutionException, InterruptedException {
+        return inferAsync(request).get();
     }
 
     private CompletableFuture<InferenceResponse> executeWithRetry(InferenceRequest request, int attempt) {
@@ -80,13 +111,22 @@ public class ResilientSentinelClient {
     }
 
     private CompletableFuture<InferenceResponse> callGateway(InferenceRequest request) {
-        // Mocking the actual HTTP/gRPC call for now as this is a logic-first implementation
+        // NOTE: In a real-world production SDK, this would use a gRPC stub or HttpClient.
+        // For the purpose of this architecture demo, we simulate the network hop.
         return CompletableFuture.supplyAsync(() -> {
-            // In a real implementation, this would use HttpClient or a gRPC stub
-            return new InferenceResponse(request.sessionId(), 0.5f, InferenceResponse.Status.SUCCESS);
+            try {
+                // Simulate network latency
+                Thread.sleep(20); 
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return new InferenceResponse(request.sessionId(), request.value() * 1.1f, InferenceResponse.Status.SUCCESS);
         });
     }
 
+    /**
+     * Gracefully shuts down the internal thread pool used for hedging and retries.
+     */
     public void shutdown() {
         scheduler.shutdown();
     }

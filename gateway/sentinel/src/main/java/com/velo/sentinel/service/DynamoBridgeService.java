@@ -70,10 +70,42 @@ public class DynamoBridgeService implements InferenceBackend {
   @Value("${velo.sentinel.hedging.delay-ms:50.0}")
   private float hedgingDelayMs;
 
+  /**
+   * Defines the available backend routing strategies.
+   */
   public enum RoutingMode {
-    TRITON, DYNAMO, SHADOW, CANARY, FAILOVER
+    /** Routes all traffic to the legacy Triton backend. */
+    TRITON, 
+    /** Routes traffic to the disaggregated Dynamo backend. */
+    DYNAMO, 
+    /** Synchronous Triton with background Dynamo validation. */
+    SHADOW, 
+    /** Progressive rollout with session-based splitting. */
+    CANARY, 
+    /** Automated cross-cloud regional failover. */
+    FAILOVER
   }
 
+    /**
+     * Initializes the DynamoBridgeService with its dependencies.
+     * 
+     * @param tritonBackend Legacy Triton backend.
+     * @param dynamoBackend Next-gen Dynamo backend.
+     * @param metalBackend Local Metal backend.
+     * @param speculativeOrchestrator Orchestrator for speculative decoding.
+     * @param meterRegistry Micrometer registry for metrics.
+     * @param resilienceComponent Resilience logic provider.
+     * @param adaptiveBatcher High-performance request coalescer.
+     * @param tracer OpenTelemetry tracer.
+     * @param throttler SLA-aware request throttler.
+     * @param driftMonitor Real-time accuracy validator.
+     * @param chaosComponent Fault injection engine.
+     * @param kvCacheRegistry Distributed session state tracker.
+     * @param semanticCache Vector-similar query cache.
+     * @param privacyScrubber PII redaction service.
+     * @param auditLogger Immutable compliance logger.
+     * @param standbyBackend Failover standby backend.
+     */
   public DynamoBridgeService(TritonBackend tritonBackend,
       DynamoBackend dynamoBackend,
       MetalBackend metalBackend,
@@ -169,12 +201,13 @@ public class DynamoBridgeService implements InferenceBackend {
 
   @Override
   public String inferText(String prompt, String sessionId, String modelName) {
-    // Phase 9: PII Scrubbing (Privacy-by-Design)
+    // PII Scrubbing (Privacy-by-Design)
     String redactedPrompt = privacyScrubber.scrub(prompt);
-    
+
     log.info("SENTINEL-PRIVACY [Session: {}]: Executing text inference with redacted prompt.", sessionId);
-    
-    // For now, we simulate the text inference by returning a response based on the backend
+
+    // For now, we simulate the text inference by returning a response based on the
+    // backend
     // In a real scenario, we'd have a text-based backend gRPC call.
     return "Sentinel[Verified]: " + redactedPrompt;
   }
@@ -197,7 +230,8 @@ public class DynamoBridgeService implements InferenceBackend {
    */
   private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority,
       int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
-    // HYBRID-ROUTING: Offload small or "privacy-sensitive" prompts to local M3 (Metal)
+    // HYBRID-ROUTING: Offload small or "privacy-sensitive" prompts to local M3
+    // (Metal)
     if (sessionId.startsWith("private-")) {
       log.info("HYBRID-ROUTING [Session: {}]: Request is local-eligible. Offloading to M3 GPU (Metal).", sessionId);
       return metalBackend.infer(value, sessionId, modelName);
@@ -266,8 +300,8 @@ public class DynamoBridgeService implements InferenceBackend {
             case SHADOW -> routeShadow(value, sessionId, modelName);
             case TRITON -> routeToTriton(value, sessionId, modelName);
             case FAILOVER -> {
-                log.warn("FAILOVER-MODE: System is in Cross-Cloud Standby mode. Routing to secondary region.");
-                yield standbyBackend.infer(value, sessionId, modelName);
+              log.warn("FAILOVER-MODE: System is in Cross-Cloud Standby mode. Routing to secondary region.");
+              yield standbyBackend.infer(value, sessionId, modelName);
             }
             case CANARY -> {
               // Deterministic session-based canary split
@@ -281,11 +315,13 @@ public class DynamoBridgeService implements InferenceBackend {
               }
             }
           };
-          
-          long duration = sample.stop(meterRegistry.timer("velo.sentinel.inference", "mode", finalMode.name(), "model", modelName));
-          
-          // Phase 9: Immutable Audit Logging
-          auditLogger.logInference(sessionId, modelName, finalMode.name(), TimeUnit.NANOSECONDS.toMillis(duration), driftMonitor.getLastDrift(), "SUCCESS");
+
+          long duration = sample
+              .stop(meterRegistry.timer("velo.sentinel.inference", "mode", finalMode.name(), "model", modelName));
+
+          // Immutable Audit Logging
+          auditLogger.logInference(sessionId, modelName, finalMode.name(), TimeUnit.NANOSECONDS.toMillis(duration),
+              driftMonitor.getLastDrift(), "SUCCESS");
 
           // Cache the result
           if (semanticCache != null) {
@@ -363,11 +399,29 @@ public class DynamoBridgeService implements InferenceBackend {
     return InferenceContext.SESSION_ID.isBound() ? InferenceContext.SESSION_ID.get() : "legacy-path";
   }
 
+
+    /**
+     * Routes a request to the legacy Triton backend.
+     * 
+     * @param value The input value.
+     * @param sessionId The session identifier.
+     * @param modelName The model name.
+     * @return The inference result.
+     */
   private float routeToTriton(float value, String sessionId, String modelName) {
     log.info("SENTINEL-MODE [TRITON]: Executing standard legacy path for model {}.", modelName);
     return tritonBackend.infer(value, sessionId, modelName);
   }
 
+    /**
+     * Routes a request to the next-gen Dynamo backend using the adaptive batcher.
+     * 
+     * @param value The input value.
+     * @param sessionId The session identifier.
+     * @param modelName The model name.
+     * @param priority The request priority.
+     * @return The inference result.
+     */
   private float routeToDynamo(float value, String sessionId, String modelName,
       com.velo.sentinel.model.PriorityTier priority) {
     try {
@@ -389,7 +443,8 @@ public class DynamoBridgeService implements InferenceBackend {
             .toList();
       }).get((long) latencyThresholdMs, TimeUnit.MILLISECONDS);
 
-      // Successfully processed -> Mark session as Warm in the distributed registry with node affinity
+      // Successfully processed -> Mark session as Warm in the distributed registry
+      // with node affinity
       kvCacheRegistry.markSessionActive(sessionId, "dynamo-worker-1");
       return result;
     } catch (Exception e) {
@@ -400,6 +455,16 @@ public class DynamoBridgeService implements InferenceBackend {
     }
   }
 
+    /**
+     * Executes a shadow inference workflow for validation.
+     * Returns the ground truth (Triton) result while asynchronously verifying Dynamo.
+     * 
+     * @param value The input value.
+     * @param sessionId The session identifier.
+     * @param modelName The model name.
+     * @return The ground truth result.
+     */
+  @SuppressWarnings("preview")
   private float routeShadow(float value, String sessionId, String modelName) {
     log.info("SENTINEL-MODE [SHADOW]: Performing side-by-side validation for model {}...", modelName);
 

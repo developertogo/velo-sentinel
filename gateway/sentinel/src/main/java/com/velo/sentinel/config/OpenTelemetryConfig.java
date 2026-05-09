@@ -23,6 +23,11 @@ public class OpenTelemetryConfig {
 
     private static final Logger log = LoggerFactory.getLogger(OpenTelemetryConfig.class);
 
+    /**
+     * Initializes the OpenTelemetry SDK.
+     * 
+     * @return The configured OpenTelemetry instance.
+     */
     @Bean
     public OpenTelemetry openTelemetry() {
         log.info("OTEL-INIT: Initializing OpenTelemetry SDK...");
@@ -46,6 +51,12 @@ public class OpenTelemetryConfig {
         }
     }
 
+    /**
+     * Provides a tracer for manual instrumentation.
+     * 
+     * @param openTelemetry The initialized OpenTelemetry SDK.
+     * @return A named Tracer instance for the sentinel project.
+     */
     @Bean
     public Tracer tracer(OpenTelemetry openTelemetry) {
         return openTelemetry.getTracer("com.velo.sentinel", "0.0.1");

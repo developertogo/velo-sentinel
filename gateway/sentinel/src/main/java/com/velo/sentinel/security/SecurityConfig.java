@@ -20,10 +20,22 @@ public class SecurityConfig {
 
     private final ApiKeyAuthFilter apiKeyAuthFilter;
 
+    /**
+     * Initializes the security configuration with the API key filter.
+     * 
+     * @param apiKeyAuthFilter The filter responsible for validating X-API-KEY headers.
+     */
     public SecurityConfig(ApiKeyAuthFilter apiKeyAuthFilter) {
         this.apiKeyAuthFilter = apiKeyAuthFilter;
     }
 
+    /**
+     * Defines the security filter chain.
+     * 
+     * @param http The HttpSecurity configuration object.
+     * @return The configured SecurityFilterChain.
+     * @throws Exception If configuration fails.
+     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http

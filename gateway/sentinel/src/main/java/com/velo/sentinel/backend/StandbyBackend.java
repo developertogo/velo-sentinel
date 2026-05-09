@@ -21,6 +21,11 @@ public class StandbyBackend implements InferenceBackend {
     private static final Logger log = LoggerFactory.getLogger(StandbyBackend.class);
     private final StandbyTritonClient standbyClient;
 
+    /**
+     * Initializes the standby backend with a dedicated cross-region gRPC client.
+     * 
+     * @param standbyClient The gRPC client connected to the failover region.
+     */
     public StandbyBackend(StandbyTritonClient standbyClient) {
         this.standbyClient = standbyClient;
     }
