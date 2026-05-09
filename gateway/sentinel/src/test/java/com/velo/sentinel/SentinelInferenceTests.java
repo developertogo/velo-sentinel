@@ -13,6 +13,8 @@ import com.velo.sentinel.service.DynamoResilienceComponent;
 import com.velo.sentinel.service.KVCacheRegistry;
 import com.velo.sentinel.service.RequestThrottler;
 import com.velo.sentinel.service.SemanticCacheService;
+import com.velo.sentinel.service.PrivacyScrubberService;
+import com.velo.sentinel.service.AuditLoggerService;
 import com.google.protobuf.ByteString;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -98,7 +100,7 @@ public class SentinelInferenceTests {
         SemanticCacheService semanticCache = mock(SemanticCacheService.class);
         when(semanticCache.checkCache(anyString())).thenReturn(null);
 
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, cacheRegistry, semanticCache);
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, cacheRegistry, semanticCache, mock(PrivacyScrubberService.class), mock(AuditLoggerService.class), mock(com.velo.sentinel.backend.StandbyBackend.class));
 
         // Manually initialize @Value fields for unit tests
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
@@ -376,5 +378,14 @@ public class SentinelInferenceTests {
         // Should fall back to Triton (10.0) despite DYNAMO mode being active
         assertThat(result).isEqualTo(10.0f);
         verify(tritonClient, atLeastOnce()).infer(eq(5.0f), anyString());
+    }
+
+    @Test
+    void testPiiScrubbing_RedactsSensitiveData() {
+        PrivacyScrubberService scrubber = new PrivacyScrubberService();
+        String rawPrompt = "Hello, my email is john.doe@example.com and my SSN is 123-45-6789.";
+        String expected = "Hello, my email is [EMAIL_REDACTED] and my SSN is [SSN_REDACTED].";
+        
+        assertThat(scrubber.scrub(rawPrompt)).isEqualTo(expected);
     }
 }

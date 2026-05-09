@@ -6,6 +6,8 @@ import com.velo.sentinel.client.DynamoGrpcClient;
 import com.velo.sentinel.client.TritonGrpcClient;
 import com.velo.sentinel.service.*;
 import com.velo.sentinel.model.PriorityTier;
+import com.velo.sentinel.service.PrivacyScrubberService;
+import com.velo.sentinel.service.AuditLoggerService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.opentelemetry.api.trace.Tracer;
@@ -77,7 +79,7 @@ public class SentinelCanaryTests {
 
         bridgeService = new DynamoBridgeService(
             tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, 
-            adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, mock(KVCacheRegistry.class), semanticCache
+            adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, mock(KVCacheRegistry.class), semanticCache, mock(PrivacyScrubberService.class), mock(AuditLoggerService.class), mock(com.velo.sentinel.backend.StandbyBackend.class)
         );
 
         ReflectionTestUtils.setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.CANARY);
