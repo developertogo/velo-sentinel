@@ -37,6 +37,10 @@ triton:
     host: localhost
     port: 8001
     model-name: simple
+  standby:
+    host: ${STANDBY_HOST:secondary.cloud.provider}
+    port: ${STANDBY_PORT:8001}
+    enabled: true
 
 dynamo:
   grpc:

@@ -21,6 +21,11 @@ public class DriftMonitor {
 
     private final AtomicInteger violationCounter = new AtomicInteger(0);
     private final AtomicBoolean vetoActive = new AtomicBoolean(false);
+    private volatile double lastDrift = 0.0;
+
+    public double getLastDrift() {
+        return lastDrift;
+    }
 
     @Value("${velo.sentinel.drift.max-violations:10}")
     private int maxViolations;
@@ -38,6 +43,7 @@ public class DriftMonitor {
         if (vetoActive.get()) return;
 
         double drift = Math.abs(tritonValue - dynamoValue);
+        this.lastDrift = drift;
         
         if (drift > driftThreshold) {
             int currentViolations = violationCounter.incrementAndGet();

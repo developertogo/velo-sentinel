@@ -23,4 +23,12 @@ public interface InferenceBackend {
   }
 
   float sentinelExecute(float value, String sessionId, String modelName, PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization);
+
+  default String inferText(String prompt) {
+      return inferText(prompt, "default-session", "simple");
+  }
+
+  default String inferText(String prompt, String sessionId, String modelName) {
+      return "Result for: " + prompt;
+  }
 }
