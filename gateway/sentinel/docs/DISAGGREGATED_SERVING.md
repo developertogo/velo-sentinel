@@ -1,6 +1,6 @@
 # Velo-Sentinel: Disaggregated Serving & Cache-Aware Routing
 
-This document outlines the architecture for high-performance LLM serving implemented in Phase 10, optimizing for NVIDIA-scale workloads.
+This document outlines the architecture for high-performance LLM serving, optimizing for NVIDIA-scale workloads.
 
 ## 1. Disaggregated Serving (Prefill/Decode Separation)
 

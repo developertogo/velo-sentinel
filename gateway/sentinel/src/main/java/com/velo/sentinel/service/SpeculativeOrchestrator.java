@@ -18,13 +18,24 @@ public class SpeculativeOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(SpeculativeOrchestrator.class);
     private final MetalBackend drafter;
 
+    /**
+     * Initializes the orchestrator with a local drafting backend.
+     * 
+     * @param drafter The local (Metal) backend used for rapid drafting.
+     */
     public SpeculativeOrchestrator(MetalBackend drafter) {
         this.drafter = drafter;
     }
 
     /**
-     * Executes speculative decoding.
-     * Starts Drafter on local M3, then verifies with Target.
+     * Executes a speculative decoding workflow.
+     * Starts by drafting on the local M3 backend, then verifies the result with the cloud target.
+     * 
+     * @param value The initial input value.
+     * @param sessionId The session identifier.
+     * @param modelName The target model name.
+     * @param target The high-fidelity cloud backend for verification.
+     * @return The verified inference result.
      */
     public float executeSpeculative(float value, String sessionId, String modelName, InferenceBackend target) {
         log.info("SPECULATIVE-INIT [Session: {}]: Starting speculative pipeline (Drafter: M3, Target: Cloud).", sessionId);

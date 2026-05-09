@@ -56,6 +56,8 @@ public class DynamoGrpcClient {
 
     /**
      * Health check: Verifies connectivity to the Dynamo backend.
+     * 
+     * @return {@code true} if healthy, {@code false} otherwise.
      */
     public boolean checkHealth() {
         if (channel == null) return false;

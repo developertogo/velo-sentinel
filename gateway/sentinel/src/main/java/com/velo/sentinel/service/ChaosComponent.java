@@ -56,6 +56,11 @@ public class ChaosComponent {
         }
     }
 
+    /**
+     * Checks if chaos injection is currently active.
+     * 
+     * @return {@code true} if enabled, {@code false} otherwise.
+     */
     public boolean isEnabled() {
         return enabled;
     }

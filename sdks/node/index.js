@@ -6,6 +6,12 @@ const path = require('path');
  * SentinelClient: High-performance Node.js client for Velo-Sentinel.
  */
 class SentinelClient {
+    /**
+     * Creates a new SentinelClient instance.
+     * 
+     * @param {string} host - The gateway hostname. Defaults to 'localhost'.
+     * @param {number} port - The gRPC port. Defaults to 8080.
+     */
     constructor(host = 'localhost', port = 8080) {
         this.target = `${host}:${port}`;
         
@@ -23,20 +29,20 @@ class SentinelClient {
             includeDirs: [__dirname] // This is a hack for the descriptor set
         });
 
-        // However, standard protoLoader prefers .proto files for easy use.
-        // Let's assume we bundle the proto files or use the descriptor set correctly.
-        // For this demo, we'll use a simplified dynamic loading if possible, 
-        // but since we only have the .pb, we'll use the descriptor logic.
-        
         const sentinelProto = grpc.loadPackageDefinition(packageDefinition);
-        // Note: The structure depends on the proto package name.
-        // In our case it's usually empty or specific.
         this.client = new sentinelProto.GRPCInferenceService(
             this.target,
             grpc.credentials.createInsecure()
         );
     }
 
+    /**
+     * Executes a synchronous inference call.
+     * 
+     * @param {number} value - The input value.
+     * @param {string} modelName - The target model name. Defaults to 'simple'.
+     * @returns {Promise<{result: number, latency_ms: number, model: string}|null>}
+     */
     async infer(value, modelName = 'simple') {
         const request = {
             model_name: modelName,

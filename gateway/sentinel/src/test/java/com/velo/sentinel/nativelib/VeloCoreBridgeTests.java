@@ -8,8 +8,11 @@ public class VeloCoreBridgeTests {
 
     @Test
     void testNativeBridgeRoundTrip() {
+        VeloNativeLibrary nativeLib = new VeloNativeLibrary("/Users/chung/sandbox/anthropic/core/target/debug/libvelo_core.dylib");
+        nativeLib.init();
+        
         // Initialize bridge with a mock model name and small slot count
-        try (VeloCoreBridge bridge = new VeloCoreBridge("llama-3-8b", 4, 1024)) {
+        try (VeloCoreBridge bridge = new VeloCoreBridge(nativeLib, "llama-3-8b", 4, 1024)) {
             List<Integer> prompt = List.of(1, 2, 3, 4, 5);
             
             // The POC Rust implementation just returns the prompt back

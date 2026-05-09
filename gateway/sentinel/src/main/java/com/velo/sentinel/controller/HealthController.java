@@ -20,11 +20,22 @@ public class HealthController {
     private final TritonGrpcClient tritonClient;
     private final DynamoGrpcClient dynamoClient;
 
+    /**
+     * Initializes the controller with necessary backend clients.
+     * 
+     * @param tritonClient The legacy Triton gRPC client.
+     * @param dynamoClient The disaggregated Dynamo gRPC client.
+     */
     public HealthController(TritonGrpcClient tritonClient, DynamoGrpcClient dynamoClient) {
         this.tritonClient = tritonClient;
         this.dynamoClient = dynamoClient;
     }
 
+    /**
+     * Aggregated health check for Kubernetes readiness probes.
+     * 
+     * @return A map containing the status of all critical backends.
+     */
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health() {
         boolean tritonHealthy = tritonClient.checkHealth();

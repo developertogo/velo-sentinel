@@ -5,7 +5,8 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.SubmissionPublisher;
 
 /**
- * Mock Triton Streaming Backend.
+ * TritonStreamingBackend: Implementation of token-by-token generation for legacy Triton.
+ * (Mocked for demonstration).
  */
 @Service("fallbackStreamingBackend")
 public class TritonStreamingBackend implements StreamingInferenceBackend {

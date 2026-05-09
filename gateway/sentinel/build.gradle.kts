@@ -129,10 +129,21 @@ tasks.withType<Test> {
 
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("--enable-preview")
+    options.compilerArgs.add("-Xlint:preview")
+    options.compilerArgs.add("-Xlint:deprecation")
+}
+
+tasks.withType<Javadoc>().configureEach {
+    options {
+        this as StandardJavadocDocletOptions
+        addBooleanOption("-enable-preview", true)
+        addStringOption("-release", "25")
+    }
+    exclude("com/velo/sentinel/grpc/**")
 }
 
 tasks.withType<Test>().configureEach {
-    jvmArgs("--enable-preview")
+    jvmArgs("--enable-preview", "--enable-native-access=ALL-UNNAMED")
     finalizedBy(tasks.jacocoTestReport) // report is always generated after tests run
 }
 
@@ -158,7 +169,7 @@ tasks.jacocoTestReport {
 
 // Ensure the application stops and ports are released on CTRL-C
 tasks.withType<JavaExec>().configureEach {
-    jvmArgs("--enable-preview")
+    jvmArgs("--enable-preview", "--enable-native-access=ALL-UNNAMED")
     // This allows the child process to receive the SIGINT from CTRL-C
     standardInput = System.`in`
 }

@@ -23,6 +23,11 @@ public class DriftMonitor {
     private final AtomicBoolean vetoActive = new AtomicBoolean(false);
     private volatile double lastDrift = 0.0;
 
+    /**
+     * Gets the last calculated accuracy drift.
+     * 
+     * @return The drift value from the most recent observation.
+     */
     public double getLastDrift() {
         return lastDrift;
     }
@@ -77,10 +82,20 @@ public class DriftMonitor {
         log.info("SAFETY-SWITCH-RESET: Drift monitor has been manually reset.");
     }
 
+    /**
+     * Checks if the safety veto is currently active.
+     * 
+     * @return {@code true} if Dynamo path is vetoed, {@code false} otherwise.
+     */
     public boolean isVetoActive() {
         return vetoActive.get();
     }
     
+    /**
+     * Gets the current number of drift violations.
+     * 
+     * @return The number of observations that exceeded the drift threshold.
+     */
     public int getViolationCount() {
         return violationCounter.get();
     }

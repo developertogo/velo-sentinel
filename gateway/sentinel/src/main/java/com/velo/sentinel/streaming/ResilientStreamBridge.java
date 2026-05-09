@@ -24,6 +24,12 @@ public class ResilientStreamBridge {
     private final StreamingInferenceBackend primaryBackend;
     private final StreamingInferenceBackend fallbackBackend;
 
+    /**
+     * Initializes the stream bridge with primary and fallback streaming backends.
+     * 
+     * @param primaryBackend The preferred high-performance streaming backend.
+     * @param fallbackBackend The reliable legacy backend used for failover.
+     */
     public ResilientStreamBridge(
             @org.springframework.beans.factory.annotation.Qualifier("primaryStreamingBackend") StreamingInferenceBackend primaryBackend,
             @org.springframework.beans.factory.annotation.Qualifier("fallbackStreamingBackend") StreamingInferenceBackend fallbackBackend) {
@@ -31,6 +37,14 @@ public class ResilientStreamBridge {
         this.fallbackBackend = fallbackBackend;
     }
 
+    /**
+     * Executes a resilient streaming inference.
+     * 
+     * @param input The input value.
+     * @param sessionId The session identifier.
+     * @param modelName The target model name.
+     * @return A Flow.Publisher emitting StreamEvent objects.
+     */
     public Flow.Publisher<StreamEvent> executeResilientStream(float input, String sessionId, String modelName) {
         return new Flow.Publisher<>() {
             @Override

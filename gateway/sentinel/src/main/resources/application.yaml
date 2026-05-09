@@ -13,6 +13,8 @@ spring:
       port: ${REDIS_PORT:6379}
 
 velo:
+  core:
+    lib-path: /Users/chung/sandbox/anthropic/core/target/debug/libvelo_core.dylib
   sentinel:
     routing-mode: SHADOW    # Options: TRITON, DYNAMO, SHADOW, CANARY
     latency-threshold-ms: 200.0  # SLO for shadow mode comparisons

@@ -18,6 +18,12 @@ public class DynamoResilienceComponent {
     private final DynamoBackend dynamoBackend;
     private final TritonBackend tritonBackend;
 
+    /**
+     * Initializes the resilience component with both next-gen and legacy backends.
+     * 
+     * @param dynamoBackend The primary disaggregated backend.
+     * @param tritonBackend The fallback legacy backend.
+     */
     public DynamoResilienceComponent(DynamoBackend dynamoBackend, TritonBackend tritonBackend) {
         this.dynamoBackend = dynamoBackend;
         this.tritonBackend = tritonBackend;
@@ -27,6 +33,11 @@ public class DynamoResilienceComponent {
      * Executes a protected call to Dynamo for a specific model.
      * Trips the circuit breaker if failures exceed the threshold.
      * Fails open to Triton if the Dynamo path is unhealthy.
+     * 
+     * @param value The input float value.
+     * @param sessionId The session identifier.
+     * @param modelName The target model name.
+     * @return The result from Dynamo (or Triton if fallback).
      */
     @CircuitBreaker(name = "dynamoBackend", fallbackMethod = "failOpenToTriton")
     public float protectedDynamoCall(float value, String sessionId, String modelName) {
@@ -35,6 +46,13 @@ public class DynamoResilienceComponent {
 
     /**
      * Resilience4j Fallback Handler.
+     * Invoked when the circuit is open or a call fails, ensuring graceful degradation.
+     * 
+     * @param value The original input value.
+     * @param sessionId The session identifier.
+     * @param modelName The target model.
+     * @param t The exception that triggered the fallback.
+     * @return The result from the fallback Triton backend.
      */
     public float failOpenToTriton(float value, String sessionId, String modelName, Throwable t) {
         log.error("DYNAMO-FAILURE [Model: {}]: Circuit is OPEN or Call Failed. Reason: {}. Failing open to Triton.",

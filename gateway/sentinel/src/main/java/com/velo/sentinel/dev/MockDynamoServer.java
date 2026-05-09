@@ -25,6 +25,11 @@ public class MockDynamoServer {
     private static final Logger log = LoggerFactory.getLogger(MockDynamoServer.class);
     private Server server;
 
+    /**
+     * Starts the mock gRPC server.
+     * 
+     * @throws IOException If the server fails to bind to the port.
+     */
     @PostConstruct
     public void start() throws IOException {
         server = ServerBuilder.forPort(9001)
@@ -34,6 +39,9 @@ public class MockDynamoServer {
         log.info("MOCK-DYNAMO-SERVER: Started successfully on port 9001 (Profile: mock-dynamo)");
     }
 
+    /**
+     * Shuts down the mock gRPC server.
+     */
     @PreDestroy
     public void stop() {
         if (server != null) {
@@ -42,6 +50,9 @@ public class MockDynamoServer {
         }
     }
 
+    /**
+     * Implementation of the Dynamo gRPC service.
+     */
     static class DynamoServiceImpl extends DynamoServiceGrpc.DynamoServiceImplBase {
         @Override
         public void infer(DynamoInferenceRequest request, StreamObserver<DynamoInferenceResponse> responseObserver) {

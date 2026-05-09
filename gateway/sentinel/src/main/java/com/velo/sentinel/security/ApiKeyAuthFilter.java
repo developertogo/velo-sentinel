@@ -28,6 +28,13 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     @Value("${velo.sentinel.api-key:velo-admin-123}")
     private String validApiKey;
 
+    /**
+     * Validates the API key from the request header and populates the security context.
+     * 
+     * @param request The incoming HTTP request.
+     * @param response The outgoing HTTP response.
+     * @param filterChain The processing chain.
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {

@@ -1,9 +1,15 @@
 package com.velo.sentinel.model;
 
 /**
- * Modern DTO for Velo-Sentinel requests.
- * Records are immutable, making them thread-safe for our Virtual Threads.
- * Includes modelName for dynamic multi-model routing.
+ * InferenceRequest: Modern Data Transfer Object for Velo-Sentinel.
+ * 
+ * @param sessionId Unique identifier for the user session.
+ * @param modelName The name of the target model (e.g., "llama-3-8b").
+ * @param value The primary input value for the inference.
+ * @param useAgenticOptimization Whether to enable internal routing optimizations.
+ * @param priority The priority tier (REALTIME, INTERACTIVE, BACKGROUND).
+ * @param complexity Estimated complexity score (0-10) for load balancing.
+ * @param precision Requested quantization level (FP16, INT8, INT4).
  */
 public record InferenceRequest(
     String sessionId,
@@ -14,6 +20,9 @@ public record InferenceRequest(
     Integer complexity,
     ModelPrecision precision
 ) {
+    /**
+     * Canonical constructor with default value logic.
+     */
     public InferenceRequest {
         if (priority == null) {
             priority = PriorityTier.INTERACTIVE; 
@@ -27,6 +36,14 @@ public record InferenceRequest(
     }
     
     // Legacy constructor for existing tests/calls
+    /**
+     * Legacy constructor for existing tests and simple calls.
+     * 
+     * @param sessionId Session ID.
+     * @param modelName Model name.
+     * @param value Input value.
+     * @param useAgenticOptimization Agentic flag.
+     */
     public InferenceRequest(String sessionId, String modelName, float value, boolean useAgenticOptimization) {
         this(sessionId, modelName, value, useAgenticOptimization, PriorityTier.INTERACTIVE, 0, ModelPrecision.FP16);
     }

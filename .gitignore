@@ -16,3 +16,21 @@ skills-lock.json
 
 # log
 *.log
+
+# Java/Gradle
+build/
+.gradle/
+*.class
+*.jar
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# IDEs
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/

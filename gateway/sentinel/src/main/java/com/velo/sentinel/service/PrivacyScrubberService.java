@@ -18,6 +18,11 @@ import java.util.regex.Pattern;
 public class PrivacyScrubberService {
     private static final Logger log = LoggerFactory.getLogger(PrivacyScrubberService.class);
 
+    /**
+     * Initializes the privacy scrubber with pre-compiled regex patterns.
+     */
+    public PrivacyScrubberService() {}
+
     // Pre-compiled patterns for Tier-1 performance
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
         "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}", Pattern.CASE_INSENSITIVE);
