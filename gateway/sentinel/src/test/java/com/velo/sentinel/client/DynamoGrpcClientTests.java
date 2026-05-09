@@ -43,4 +43,22 @@ public class DynamoGrpcClientTests {
         client.shutdown();
         verify(mockChannel).shutdown();
     }
+
+    @Test
+    void testShutdownNull() {
+        ReflectionTestUtils.setField(client, "channel", null);
+        client.shutdown(); // Should not throw
+    }
+
+    @Test
+    void testCheckHealth() {
+        when(mockChannel.getState(true)).thenReturn(io.grpc.ConnectivityState.READY);
+        assertThat(client.checkHealth()).isTrue();
+
+        when(mockChannel.getState(true)).thenReturn(io.grpc.ConnectivityState.TRANSIENT_FAILURE);
+        assertThat(client.checkHealth()).isFalse();
+
+        ReflectionTestUtils.setField(client, "channel", null);
+        assertThat(client.checkHealth()).isFalse();
+    }
 }

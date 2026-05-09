@@ -208,6 +208,7 @@ graph TD
    ./gradlew test jacocoTestReport
    ```
    The report URL is: `file:///${PWD}/gateway/sentinel/build/reports/jacoco/test/html/index.html`
+   The unit test coverage is **>84%**.
 
 ---
 

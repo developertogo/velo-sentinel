@@ -100,7 +100,7 @@ public class SentinelInferenceTests {
         SemanticCacheService semanticCache = mock(SemanticCacheService.class);
         when(semanticCache.checkCache(anyString())).thenReturn(null);
 
-        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, cacheRegistry, semanticCache, mock(PrivacyScrubberService.class), mock(AuditLoggerService.class), mock(com.velo.sentinel.backend.StandbyBackend.class));
+        bridgeService = new DynamoBridgeService(tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, cacheRegistry, semanticCache, new PrivacyScrubberService(), mock(AuditLoggerService.class), mock(com.velo.sentinel.backend.StandbyBackend.class));
 
         // Manually initialize @Value fields for unit tests
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
@@ -387,5 +387,48 @@ public class SentinelInferenceTests {
         String expected = "Hello, my email is [EMAIL_REDACTED] and my SSN is [SSN_REDACTED].";
         
         assertThat(scrubber.scrub(rawPrompt)).isEqualTo(expected);
+    }
+
+    @Test
+    void testRoutingModeCanary() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.CANARY);
+        setField(bridgeService, "canaryPercentage", 100); // All to Dynamo
+        when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(20.0f);
+        
+        float result = bridgeService.infer(5.0f, "session-canary", "simple");
+        assertThat(result).isEqualTo(20.0f);
+
+        setField(bridgeService, "canaryPercentage", 0); // All to Triton
+        setupTritonMock(10.0f);
+        result = bridgeService.infer(5.0f, "session-canary", "simple");
+        assertThat(result).isEqualTo(10.0f);
+    }
+
+    @Test
+    void testRoutingModeFailover() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.FAILOVER);
+        com.velo.sentinel.backend.StandbyBackend mockStandby = mock(com.velo.sentinel.backend.StandbyBackend.class);
+        setField(bridgeService, "standbyBackend", mockStandby);
+        when(mockStandby.infer(anyFloat(), anyString(), anyString())).thenReturn(30.0f);
+
+        float result = bridgeService.infer(5.0f, "session-failover", "simple");
+        assertThat(result).isEqualTo(30.0f);
+    }
+
+    @Test
+    void testInferText() {
+        String result = bridgeService.inferText("Hello john@example.com", "session-text", "llama-3");
+        assertThat(result).contains("[EMAIL_REDACTED]");
+    }
+
+    @Test
+    void testSpeculativeDecoding() {
+        setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
+        com.velo.sentinel.service.SpeculativeOrchestrator mockSpec = mock(com.velo.sentinel.service.SpeculativeOrchestrator.class);
+        setField(bridgeService, "speculativeOrchestrator", mockSpec);
+        when(mockSpec.executeSpeculative(anyFloat(), anyString(), anyString(), any())).thenReturn(50.0f);
+
+        float result = bridgeService.sentinelExecute(1.0f, "session-spec", "llama-3", com.velo.sentinel.model.PriorityTier.REALTIME, 100, com.velo.sentinel.model.ModelPrecision.FP16, true);
+        assertThat(result).isEqualTo(50.0f);
     }
 }
