@@ -73,4 +73,18 @@ public class TritonGrpcClientTests {
         
         verify(mockChannel).shutdownNow();
     }
+
+    @Test
+    void testCheckHealth() {
+        com.velo.sentinel.grpc.ServerLiveResponse mockResponse = com.velo.sentinel.grpc.ServerLiveResponse.newBuilder().setLive(true).build();
+        when(mockStub.serverLive(any())).thenReturn(mockResponse);
+
+        assertThat(client.checkHealth()).isTrue();
+    }
+
+    @Test
+    void testCheckHealthException() {
+        when(mockStub.serverLive(any())).thenThrow(new RuntimeException("Error"));
+        assertThat(client.checkHealth()).isFalse();
+    }
 }

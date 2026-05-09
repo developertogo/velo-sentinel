@@ -92,4 +92,11 @@ public class TritonBackendTests {
                 .build();
         when(mockClient.infer(anyFloat(), anyString())).thenReturn(response);
     }
+
+    @Test
+    void testSentinelExecute() {
+        setupMockResponse(100.0f);
+        float result = tritonBackend.sentinelExecute(1.0f, "session-2", "simple", com.velo.sentinel.model.PriorityTier.REALTIME, 5, com.velo.sentinel.model.ModelPrecision.FP16, true);
+        assertThat(result).isEqualTo(100.0f);
+    }
 }

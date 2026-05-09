@@ -83,4 +83,15 @@ public class DynamoBackendTests {
         assertThat(result).isEqualTo(10.0f);
         verify(mockClient).callDynamo(1.0f, "user-1", model);
     }
+
+    @Test
+    void testSentinelExecute() {
+        String model = "llama-3";
+        when(mockClient.callDynamo(anyFloat(), anyString(), eq(model))).thenReturn(10.0f);
+
+        float result = dynamoBackend.sentinelExecute(1.0f, "user-2", model, com.velo.sentinel.model.PriorityTier.REALTIME, 5, com.velo.sentinel.model.ModelPrecision.FP16, true);
+
+        assertThat(result).isEqualTo(10.0f);
+        verify(mockClient).callDynamo(1.0f, "user-2", model);
+    }
 }
