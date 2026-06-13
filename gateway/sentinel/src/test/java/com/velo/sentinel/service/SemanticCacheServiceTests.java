@@ -12,7 +12,7 @@ class SemanticCacheServiceTests {
         String prompt = "What is the capital of France?";
         float result = 42.0f;
         cache.updateCache(prompt, result);
-        
+
         Float cachedValue = cache.checkCache(prompt);
         assertNotNull(cachedValue);
         assertEquals(result, cachedValue);
@@ -29,7 +29,7 @@ class SemanticCacheServiceTests {
         String prompt = "Temporary data";
         cache.updateCache(prompt, 1.0f);
         assertNotNull(cache.checkCache(prompt));
-        
+
         cache.evict(prompt);
         assertNull(cache.checkCache(prompt));
     }

@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * DriftMonitor: The Automated Safety Switch.
- * 
+ *
  * Monitors the accuracy drift between Triton (Ground Truth) and Dynamo (Shadow).
  * If drift exceeds 'maxDriftThreshold' for more than 'maxViolations' times,
  * the monitor trips the "Veto" switch to disable Dynamo path automatically.
@@ -25,7 +25,7 @@ public class DriftMonitor {
 
     /**
      * Gets the last calculated accuracy drift.
-     * 
+     *
      * @return The drift value from the most recent observation.
      */
     public double getLastDrift() {
@@ -40,7 +40,7 @@ public class DriftMonitor {
 
     /**
      * Records a prediction pair and checks for drift.
-     * 
+     *
      * @param tritonValue Ground truth from legacy backend.
      * @param dynamoValue Experimental value from next-gen backend.
      */
@@ -49,12 +49,12 @@ public class DriftMonitor {
 
         double drift = Math.abs(tritonValue - dynamoValue);
         this.lastDrift = drift;
-        
+
         if (drift > driftThreshold) {
             int currentViolations = violationCounter.incrementAndGet();
-            log.warn("DRIFT-VIOLATION [{}]: Drift detected ({}). Current violations: {}/{}", 
+            log.warn("DRIFT-VIOLATION [{}]: Drift detected ({}). Current violations: {}/{}",
                 drift > driftThreshold, drift, currentViolations, maxViolations);
-            
+
             if (currentViolations >= maxViolations) {
                 tripVeto();
             }
@@ -84,16 +84,16 @@ public class DriftMonitor {
 
     /**
      * Checks if the safety veto is currently active.
-     * 
+     *
      * @return {@code true} if Dynamo path is vetoed, {@code false} otherwise.
      */
     public boolean isVetoActive() {
         return vetoActive.get();
     }
-    
+
     /**
      * Gets the current number of drift violations.
-     * 
+     *
      * @return The number of observations that exceeded the drift threshold.
      */
     public int getViolationCount() {

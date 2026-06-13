@@ -38,12 +38,12 @@ public class SentinelContextualRoutingTests {
         @Bean @Primary public TritonBackend tritonBackend() { return mock(TritonBackend.class); }
         @Bean @Primary public AdaptiveBatcher adaptiveBatcher() { return mock(AdaptiveBatcher.class); }
         @Bean @Primary public ChaosComponent chaosComponent() { return mock(ChaosComponent.class); }
-        @Bean @Primary public KVCacheRegistry kvCacheRegistry() { 
+        @Bean @Primary public KVCacheRegistry kvCacheRegistry() {
             KVCacheRegistry registry = mock(KVCacheRegistry.class);
             when(registry.isSessionWarm(anyString())).thenReturn(false);
             return registry;
         }
-        @Bean @Primary public SemanticCacheService semanticCacheService() { 
+        @Bean @Primary public SemanticCacheService semanticCacheService() {
             SemanticCacheService mockCache = mock(SemanticCacheService.class);
             when(mockCache.checkCache(anyString())).thenReturn(null);
             return mockCache;

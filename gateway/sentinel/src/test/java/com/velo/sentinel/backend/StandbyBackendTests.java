@@ -25,11 +25,11 @@ class StandbyBackendTests {
         float expectedValue = 42.0f;
         byte[] bytes = new byte[4];
         ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putFloat(expectedValue);
-        
+
         ModelInferResponse response = ModelInferResponse.newBuilder()
                 .addRawOutputContents(ByteString.copyFrom(bytes))
                 .build();
-        
+
         when(standbyClient.infer(anyFloat(), anyString())).thenReturn(response);
 
         float result = backend.infer(1.0f, "session-1", "model-1");

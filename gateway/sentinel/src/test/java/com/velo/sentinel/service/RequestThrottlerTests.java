@@ -38,14 +38,14 @@ public class RequestThrottlerTests {
     @Test
     void testThrottle_ExceedsQuota_ThrowsException() {
         String sessionId = "abusive-session";
-        
+
         // Quota is 10 requests per second
         for (int i = 0; i < 10; i++) {
             throttler.throttle(sessionId, () -> "ok");
         }
 
         // 11th request should fail
-        assertThatThrownBy(() -> 
+        assertThatThrownBy(() ->
             throttler.throttle(sessionId, () -> "fail")
         ).isInstanceOf(RequestNotPermitted.class);
     }
@@ -61,7 +61,7 @@ public class RequestThrottlerTests {
         }
 
         // Session A should be blocked
-        assertThatThrownBy(() -> 
+        assertThatThrownBy(() ->
             throttler.throttle(sessionA, () -> "fail")
         ).isInstanceOf(RequestNotPermitted.class);
 

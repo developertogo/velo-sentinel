@@ -4,15 +4,21 @@ import com.velo.sentinel.model.PriorityTier;
 import com.velo.sentinel.model.ModelPrecision;
 
 /**
- * InferenceBackend: The core abstraction for model execution.
- * 
- * This interface defines the contract for all backends (Triton, Dynamo, Metal)
- * to ensure consistent request handling and fallback behavior across the system.
+ * InferenceBackend: The "Contract" for AI execution.
+ *
+ * In programming, an "Interface" is like a "Contract" or a "Standard Power Plug."
+ * It defines a list of things (methods) that a backend MUST be able to do.
+ *
+ * Because we have this interface, the rest of the system can use Triton, Dynamo,
+ * or Metal interchangeably. As long as they follow this contract, they "fit the plug."
+ *
+ * For a beginner: This is the "Blueprint" that tells all backends how they should
+ * behave when they receive a request.
  */
 public interface InferenceBackend {
   /**
    * Executes a simple inference call.
-   * 
+   *
    * @param value The input float value.
    * @return The prediction result.
    */
@@ -20,7 +26,7 @@ public interface InferenceBackend {
 
   /**
    * Executes inference with session tracking.
-   * 
+   *
    * @param value The input value.
    * @param sessionId Unique session ID.
    * @return The prediction result.
@@ -31,7 +37,7 @@ public interface InferenceBackend {
 
   /**
    * Executes inference with session and model targeting.
-   * 
+   *
    * @param value The input value.
    * @param sessionId Unique session ID.
    * @param modelName Name of the target model.
@@ -43,7 +49,7 @@ public interface InferenceBackend {
 
   /**
    * Executes inference with SLA and complexity hints.
-   * 
+   *
    * @param value The input value.
    * @param sessionId Unique session ID.
    * @param modelName Target model name.
@@ -57,7 +63,7 @@ public interface InferenceBackend {
 
   /**
    * Executes inference with full parameter set including precision.
-   * 
+   *
    * @param value The input value.
    * @param sessionId Unique session ID.
    * @param modelName Target model name.
@@ -72,7 +78,7 @@ public interface InferenceBackend {
 
   /**
    * High-fidelity execution with agentic optimization support.
-   * 
+   *
    * @param value The input value.
    * @param sessionId Unique session ID.
    * @param modelName Target model name.
@@ -86,7 +92,7 @@ public interface InferenceBackend {
 
   /**
    * Executes a text-based inference (Mock).
-   * 
+   *
    * @param prompt The input text prompt.
    * @return The generated text result.
    */
@@ -96,7 +102,7 @@ public interface InferenceBackend {
 
   /**
    * Executes a text-based inference with session and model context (Mock).
-   * 
+   *
    * @param prompt The input text prompt.
    * @param sessionId Unique session ID.
    * @param modelName Target model name.

@@ -79,9 +79,9 @@ class StandbyTritonClientTests {
     void testShutdown() throws InterruptedException {
         when(channel.shutdown()).thenReturn(channel);
         when(channel.awaitTermination(anyLong(), any(TimeUnit.class))).thenReturn(true);
-        
+
         client.shutdown();
-        
+
         verify(channel).shutdown();
     }
 }

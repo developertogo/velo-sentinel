@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * ResilientStreamBridge: Orchestrates mid-stream failovers.
- * 
+ *
  * If a primary AI stream stutters or fails, this bridge automatically
  * re-homes the session to a ground-truth backend and resumes generation
  * from the last successful token.
@@ -26,7 +26,7 @@ public class ResilientStreamBridge {
 
     /**
      * Initializes the stream bridge with primary and fallback streaming backends.
-     * 
+     *
      * @param primaryBackend The preferred high-performance streaming backend.
      * @param fallbackBackend The reliable legacy backend used for failover.
      */
@@ -39,7 +39,7 @@ public class ResilientStreamBridge {
 
     /**
      * Executes a resilient streaming inference.
-     * 
+     *
      * @param input The input value.
      * @param sessionId The session identifier.
      * @param modelName The target model name.

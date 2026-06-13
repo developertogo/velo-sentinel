@@ -5,6 +5,7 @@ import com.velo.sentinel.context.InferenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Primary;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
@@ -15,19 +16,27 @@ import java.util.function.Function;
 import jakarta.annotation.PreDestroy;
 
 /**
- * AdaptiveBatcher: High-performance disaggregated request coalescing.
+ * AdaptiveBatcher: The "Elevator Operator" of the Inference System.
  *
- * <p>Implements Disaggregated Serving (Prefill/Decode Separation):
- * <ul>
- *   <li><b>Prefill Queue</b> — compute-bound prompt processing, max batch 32, 10 ms window.</li>
- *   <li><b>Decode Queue</b>  — memory-bound token generation, max batch 8, 2 ms window.</li>
- *   <li><b>Sticky Cache</b>  — session→worker affinity to minimise KV-cache recomputation.</li>
- * </ul>
+ * Imagine you're in a big building (the AI server). People (requests) arrive one by one
+ * wanting to go up.
+ * - If you send the elevator up for every single person, it's very expensive and slow.
+ * - Instead, the elevator waits a few seconds (waitMs) for more people (Batching) to arrive.
+ * - This way, you take 8 or 32 people at once, making it much more efficient!
  *
- * <p>Both loops run on dedicated Java 25 virtual threads for zero-overhead scheduling.
- * Backpressure is exposed as Micrometer gauges consumed by the HPA controller.
+ * This class handles two special types of "Elevators":
+ * 1. **Prefill (The Boarding Phase)**: This is when the AI first reads your prompt.
+ *    It's like people boarding a train. It's "compute-heavy" (hard work).
+ * 2. **Decode (The Traveling Phase)**: This is when the AI generates words one by one.
+ *    It's like the train moving between stations. It's "memory-heavy" (less work, but happens a lot).
+ *
+ * By keeping these separate, we can optimize the hardware for both.
+ *
+ * We use **Virtual Threads** (from Java 25) which are like "Super-Fast Workers"
+ * that can handle thousands of elevators at once without getting tired or using much memory.
  */
 @Service
+@Primary
 public class AdaptiveBatcher {
     private static final Logger log = LoggerFactory.getLogger(AdaptiveBatcher.class);
 
@@ -52,7 +61,7 @@ public class AdaptiveBatcher {
 
     /**
      * Initializes the AdaptiveBatcher with dedicated virtual threads.
-     * 
+     *
      * @param meterRegistry Registry for enqueuing backpressure metrics.
      */
     public AdaptiveBatcher(MeterRegistry meterRegistry) {
@@ -90,15 +99,17 @@ public class AdaptiveBatcher {
     }
 
     /**
-     * Submits a single inference request to be batched.
+     * Submits a single request to the batcher.
      *
-     * @param value          The input embedding value.
-     * @param sessionId      The session ID (used for sticky-cache affinity).
-     * @param modelName      The model name.
-     * @param priority       SLA priority tier (affects EDF scheduling deadline).
-     * @param isPrefill      {@code true} → prefill pool; {@code false} → decode pool.
-     * @param batchProcessor The function to execute the coalesced batch (usually a gRPC call).
-     * @return A {@link CompletableFuture} that resolves when the batch is processed.
+     * It's like a person stepping into the elevator lobby and getting a ticket (Future).
+     *
+     * @param value          The data to process.
+     * @param sessionId      Who is asking? (Used to keep people from the same group together).
+     * @param modelName      Which AI should answer?
+     * @param priority       How fast does this person need to get there? (SLA).
+     * @param isPrefill      Is this a "Boarding" request or a "Traveling" request?
+     * @param batchProcessor The "Elevator" itself (the logic that actually runs the AI).
+     * @return A "Ticket" (CompletableFuture) that will eventually contain the answer.
      */
     public CompletableFuture<Float> submit(
             float value,
@@ -126,7 +137,7 @@ public class AdaptiveBatcher {
 
     /**
      * Convenience overload: defaults to {@link PriorityTier#INTERACTIVE} and prefill routing.
-     * 
+     *
      * @param value          The input embedding value.
      * @param sessionId      The session ID.
      * @param modelName      The model name.
@@ -145,12 +156,16 @@ public class AdaptiveBatcher {
     // Internal processing loop
     // -------------------------------------------------------------------------
 
-    private void processLoop(
-            String type,
-            BlockingQueue<InferenceTask> queue,
-            int maxBatchSize,
-            long waitMs) {
-
+    /**
+     * The internal loop that actually manages the "Elevator."
+     *
+     * 1. It waits for the first person (poll).
+     * 2. Once someone arrives, it starts a timer (waitMs).
+     * 3. It tries to fill the elevator with more people until it's full (maxBatchSize)
+     *    or the timer runs out.
+     * 4. Then it tells the AI to process everyone at once (executeBatch).
+     */
+    private void processLoop(String type, BlockingQueue<InferenceTask> queue, int maxBatchSize, long waitMs) {
         while (!Thread.currentThread().isInterrupted() || (!queue.isEmpty() && shuttingDown)) {
             List<InferenceTask> batch = new ArrayList<>();
             try {
@@ -216,16 +231,16 @@ public class AdaptiveBatcher {
     /**
      * Weighted backpressure factor: prefill depth counts 2× (more compute-expensive).
      * Consumed by the Sentinel HPA adapter and Grafana dashboards.
-     * 
+     *
      * @return A calculated score representing current load pressure.
      */
     public double getBackpressureFactor() {
         return (prefillQueue.size() * 2.0 + decodeQueue.size()) / 10.0;
     }
 
-    /** 
-     * Rough concurrency score relative to a soft limit of 64 in-flight tasks. 
-     * 
+    /**
+     * Rough concurrency score relative to a soft limit of 64 in-flight tasks.
+     *
      * @return Percentage of concurrency headroom utilized.
      */
     public double getConcurrencyScore() {
@@ -234,7 +249,7 @@ public class AdaptiveBatcher {
 
     /**
      * Minimum SLA headroom (ms) across both queues — used for proactive back-pressure.
-     * 
+     *
      * @return Time in milliseconds until the most urgent task violates its SLA.
      */
     public double calculateSlaHeadroom() {
@@ -252,7 +267,7 @@ public class AdaptiveBatcher {
 
     /**
      * BatchItem: Represents a single unit of work within a coalesced batch.
-     * 
+     *
      * @param value The input data.
      * @param sessionId The session identifier.
      * @param modelName The target model.

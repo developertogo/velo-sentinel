@@ -13,7 +13,7 @@ import jakarta.annotation.PreDestroy;
 
 /**
  * DynamoGrpcClient: The Hardened Next-Gen Interface.
- * 
+ *
  * Manages the high-performance gRPC channel to the Dynamo inference service.
  * Implements standard Spring lifecycle management for clean startup and shutdown
  * of network resources.
@@ -44,7 +44,7 @@ public class DynamoGrpcClient {
     }
 
     /**
-     * Ensures clean resource teardown by shutting down the gRPC channel 
+     * Ensures clean resource teardown by shutting down the gRPC channel
      * during application termination.
      */
     @PreDestroy
@@ -56,7 +56,7 @@ public class DynamoGrpcClient {
 
     /**
      * Health check: Verifies connectivity to the Dynamo backend.
-     * 
+     *
      * @return {@code true} if healthy, {@code false} otherwise.
      */
     public boolean checkHealth() {
@@ -68,7 +68,7 @@ public class DynamoGrpcClient {
     /**
      * Executes the gRPC call to the Dynamo service for a specific model.
      * Translates domain parameters into Proto-generated stubs.
-     * 
+     *
      * @param value Input feature value.
      * @param sessionId Session ID for remote cache affinity.
      * @param modelName Target model for inference.

@@ -42,7 +42,7 @@ public class KVCacheRegistryTests {
         factory.afterPropertiesSet();
         redisTemplate = new StringRedisTemplate(factory);
         cacheRegistry = new KVCacheRegistry(redisTemplate);
-        
+
         try {
             redisTemplate.getConnectionFactory().getConnection().flushAll();
         } catch (Exception e) {
@@ -72,9 +72,9 @@ public class KVCacheRegistryTests {
         // Use a mock template to simulate failure without stopping the real embedded server
         StringRedisTemplate mockTemplate = mock(StringRedisTemplate.class);
         when(mockTemplate.hasKey(anyString())).thenThrow(new RuntimeException("Redis Connection Refused"));
-        
+
         KVCacheRegistry failureRegistry = new KVCacheRegistry(mockTemplate);
-        
+
         // Should return false (COLD) instead of throwing exception
         assertThat(failureRegistry.isSessionWarm("any-session")).isFalse();
     }
@@ -94,7 +94,7 @@ public class KVCacheRegistryTests {
         doThrow(new RuntimeException("Write Failure")).when(mockOps).set(anyString(), anyString(), any(java.time.Duration.class));
 
         KVCacheRegistry failureRegistry = new KVCacheRegistry(mockTemplate);
-        
+
         // This should not throw an exception
         failureRegistry.markSessionActive("some-session", "node-1");
     }
@@ -105,7 +105,7 @@ public class KVCacheRegistryTests {
         org.springframework.data.redis.core.ValueOperations<String, String> mockOps = mock(org.springframework.data.redis.core.ValueOperations.class);
         when(mockTemplate.opsForValue()).thenReturn(mockOps);
         when(mockOps.get(anyString())).thenReturn("node-1");
-        
+
         KVCacheRegistry mockRegistry = new KVCacheRegistry(mockTemplate);
         assertThat(mockRegistry.isSessionWarm("test-session")).isTrue();
     }
@@ -116,7 +116,7 @@ public class KVCacheRegistryTests {
 
         String sessionId = "test-affinity-user";
         assertThat(cacheRegistry.getWorkerAffinity(sessionId)).isNull();
-        
+
         cacheRegistry.markSessionActive(sessionId, "gpu-worker-42");
         assertThat(cacheRegistry.getWorkerAffinity(sessionId)).isEqualTo("gpu-worker-42");
     }

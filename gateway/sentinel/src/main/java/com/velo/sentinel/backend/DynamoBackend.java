@@ -10,15 +10,19 @@ import org.springframework.stereotype.Service;
 import com.velo.sentinel.context.InferenceContext;
 
 /**
- * DynamoBackend: The Next-Gen Disaggregated Inference Engine.
- * 
- * Specifically optimized for the NVIDIA Dynamo 1.0 architecture, this backend
- * leverages a disaggregated KV-Cache model to improve inference throughput 
- * and reduce compute redundancy.
- * 
- * Key Features:
- * 1. Session-Aware Registry: Tracks "Warm" vs "Cold" sessions via KVCacheRegistry.
- * 2. High-Performance gRPC: Offloads heavy computation to specialized remote services.
+ * DynamoBackend: The "Next-Gen" High-Speed Engine.
+ *
+ * Dynamo is our new, state-of-the-art system. It uses a "Disaggregated" architecture.
+ * Imagine a kitchen:
+ * - In the old system (Triton), every chef (compute) has their own pantry (memory).
+ * - In Dynamo, we have one giant, shared Pantry (KV-Cache) and many Chefs (Compute nodes).
+ *   This allows us to be much more efficient because chefs can share ingredients!
+ *
+ * This class also manages "Warm" vs "Cold" sessions:
+ * 1. **Cold Session**: The chef has to go to the pantry and find the right ingredients
+ *    for your specific request. This takes a bit longer.
+ * 2. **Warm Session**: The chef already has your ingredients on the counter!
+ *    The next request will be lightning-fast.
  */
 @Service
 public class DynamoBackend implements InferenceBackend {
@@ -46,7 +50,7 @@ public class DynamoBackend implements InferenceBackend {
 
   /**
    * Executes a session-aware inference call for a specific model.
-   * Manages the "Warm-up" lifecycle for disaggregated caching before 
+   * Manages the "Warm-up" lifecycle for disaggregated caching before
    * delegating the actual computation to the gRPC client.
    */
   @Override

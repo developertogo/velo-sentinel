@@ -48,7 +48,7 @@ public class StandbyTritonClient {
     public void init() {
         String target = "dns:///" + host + ":" + port;
         log.info("STANDBY-CLIENT: Initializing cross-cloud connection to: {} (Model: {})", target, modelName);
-        
+
         this.channel = ManagedChannelBuilder
                 .forTarget(target)
                 .defaultLoadBalancingPolicy("round_robin")
@@ -60,7 +60,7 @@ public class StandbyTritonClient {
 
     /**
      * Executes an inference call to the failover region.
-     * 
+     *
      * @param value The input float value.
      * @param modelNameOverride The model name to target in the standby region.
      * @return The raw ModelInferResponse from the standby Triton server.
@@ -68,7 +68,7 @@ public class StandbyTritonClient {
     public ModelInferResponse infer(float value, String modelNameOverride) {
         try {
             log.warn("STANDBY-EXECUTION: Routing request to secondary cloud provider.");
-            
+
             InferTensorContents contents = InferTensorContents.newBuilder()
                     .addFp32Contents(value)
                     .build();
@@ -86,7 +86,7 @@ public class StandbyTritonClient {
                     .build();
 
             return stub.withDeadlineAfter(500, TimeUnit.MILLISECONDS).modelInfer(request);
-            
+
         } catch (StatusRuntimeException e) {
             log.error("STANDBY-CLIENT-ERROR: Failover region unreachable. Status: {}", e.getStatus().getCode());
             throw e;
@@ -95,7 +95,7 @@ public class StandbyTritonClient {
 
     /**
      * Health check for the standby region.
-     * 
+     *
      * @return {@code true} if the standby region is live, {@code false} otherwise.
      */
     public boolean checkHealth() {

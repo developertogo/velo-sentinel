@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * InferenceController: The Primary Gateway Interface.
- * 
+ *
  * Provides a standardized REST API for triggering inference workflows.
  * Bridges traditional JSON/HTTP clients to our optimized gRPC/Virtual-Thread backend.
  * Supports legacy single-inference and next-gen dual-inference (Shadow) modes.
@@ -24,11 +24,11 @@ public class InferenceController {
 
     /**
      * Initializes the InferenceController with required orchestration services.
-     * 
+     *
      * @param bridgeService The primary service for resilient backend orchestration.
      * @param streamBridge The bridge for handling asynchronous streaming events.
      */
-    public InferenceController(DynamoBridgeService bridgeService, 
+    public InferenceController(DynamoBridgeService bridgeService,
                                com.velo.sentinel.streaming.ResilientStreamBridge streamBridge) {
         this.bridgeService = bridgeService;
         this.streamBridge = streamBridge;
@@ -37,7 +37,7 @@ public class InferenceController {
     /**
      * Resilient Streaming Endpoint (SSE).
      * Provides real-time token updates over a persistent HTTP connection.
-     * 
+     *
      * @param value The primary input value for the inference.
      * @param sessionId Optional session identifier.
      * @param model Optional model name (defaults to "simple").
@@ -48,12 +48,12 @@ public class InferenceController {
             @org.springframework.web.bind.annotation.RequestParam float value,
             @org.springframework.web.bind.annotation.RequestParam(required = false) String sessionId,
             @org.springframework.web.bind.annotation.RequestParam(required = false) String model) {
-        
+
         String session = sessionId != null ? sessionId : "stream-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         String modelName = model != null ? model : "simple";
-        
+
         org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter = new org.springframework.web.servlet.mvc.method.annotation.SseEmitter();
-        
+
         streamBridge.executeResilientStream(value, session, modelName).subscribe(new java.util.concurrent.Flow.Subscriber<>() {
             @Override
             public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
@@ -79,13 +79,13 @@ public class InferenceController {
                 emitter.complete();
             }
         });
-        
+
         return emitter;
     }
 
     /**
      * Main inference endpoint.
-     * 
+     *
      * @param request The inference request containing input values and session state.
      * @return InferenceResponse with prediction results and execution status.
      */
@@ -93,7 +93,7 @@ public class InferenceController {
     public org.springframework.http.ResponseEntity<InferenceResponse> infer(@RequestBody InferenceRequest request) {
         String model = request.modelName() != null ? request.modelName() : "simple";
         String sessionId = request.sessionId() != null ? request.sessionId() : "anonymous";
-        
+
         try {
             return com.velo.sentinel.context.InferenceContext.runInContext(sessionId, () -> {
                 float result = bridgeService.sentinelExecute(request.value(), sessionId, model, request.priority(), request.complexity(), request.precision(), request.useAgenticOptimization());
@@ -106,7 +106,7 @@ public class InferenceController {
         } catch (io.github.resilience4j.ratelimiter.RequestNotPermitted e) {
             org.slf4j.LoggerFactory.getLogger(InferenceController.class)
                 .warn("SLA-VIOLATION: Session {} throttled. Reason: {}", sessionId, e.getMessage());
-            
+
             return org.springframework.http.ResponseEntity
                 .status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)
                 .body(new InferenceResponse(
@@ -118,7 +118,7 @@ public class InferenceController {
             // Log the critical outage
             org.slf4j.LoggerFactory.getLogger(InferenceController.class)
                 .error("CRITICAL-OUTAGE: Total system failure. Reason: {}", e.getMessage());
-            
+
             return org.springframework.http.ResponseEntity
                 .status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new InferenceResponse(

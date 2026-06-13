@@ -14,9 +14,9 @@ public class ResilientSentinelClientTest {
     void testBasicInference() throws Exception {
         ResilientSentinelClient client = new ResilientSentinelClient("http://localhost:8080", 0, 1);
         InferenceRequest request = new InferenceRequest("test-session", "test-model", 10.0f, false);
-        
+
         InferenceResponse response = client.infer(request);
-        
+
         assertNotNull(response);
         assertEquals("test-session", response.sessionId());
         assertEquals(InferenceResponse.Status.SUCCESS, response.status());
@@ -28,9 +28,9 @@ public class ResilientSentinelClientTest {
         // Set hedging delay very low (1ms) to ensure hedging is triggered
         ResilientSentinelClient client = new ResilientSentinelClient("http://localhost:8080", 1, 1);
         InferenceRequest request = new InferenceRequest("hedge-session", "test-model", 10.0f, false);
-        
+
         InferenceResponse response = client.infer(request);
-        
+
         assertNotNull(response);
         assertEquals(InferenceResponse.Status.SUCCESS, response.status());
         client.shutdown();
@@ -40,10 +40,10 @@ public class ResilientSentinelClientTest {
     void testAsyncInference() throws Exception {
         ResilientSentinelClient client = new ResilientSentinelClient("http://localhost:8080", 0, 1);
         InferenceRequest request = new InferenceRequest("test-session", "test-model", 10.0f, false);
-        
+
         CompletableFuture<InferenceResponse> future = client.inferAsync(request);
         InferenceResponse response = future.get();
-        
+
         assertNotNull(response);
         assertEquals(InferenceResponse.Status.SUCCESS, response.status());
         client.shutdown();

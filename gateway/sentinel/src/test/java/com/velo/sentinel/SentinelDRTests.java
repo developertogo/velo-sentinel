@@ -35,7 +35,7 @@ public class SentinelDRTests {
     void setup() {
         standbyClient = mock(StandbyTritonClient.class);
         standbyBackend = new StandbyBackend(standbyClient);
-        
+
         TritonBackend tritonBackend = mock(TritonBackend.class);
         DynamoBackend dynamoBackend = mock(DynamoBackend.class);
         MetalBackend metalBackend = mock(MetalBackend.class);
@@ -86,7 +86,7 @@ public class SentinelDRTests {
         ModelInferResponse mockResponse = ModelInferResponse.newBuilder()
                 .addRawOutputContents(ByteString.copyFrom(resultBytes))
                 .build();
-        
+
         when(standbyClient.infer(anyFloat(), anyString())).thenReturn(mockResponse);
 
         // Execute inference in FAILOVER mode

@@ -27,11 +27,11 @@ public class MetalBackend implements InferenceBackend, AutoCloseable {
 
     /**
      * Initializes the Metal backend with the native library loader.
-     * 
+     *
      * @param nativeLib Loader for the Velo-Core native library.
      * @param modelName The model name to load into GPU memory.
      */
-    public MetalBackend(VeloNativeLibrary nativeLib, 
+    public MetalBackend(VeloNativeLibrary nativeLib,
                         @Value("${metal.grpc.model-name:phi-2-metal}") String modelName) {
         this.nativeLib = nativeLib;
         this.modelName = modelName;
@@ -66,11 +66,11 @@ public class MetalBackend implements InferenceBackend, AutoCloseable {
     public float infer(float value, String sessionId, String modelName) {
         if (bridge == null) {
             log.warn("METAL-EXECUTION [SIMULATION] [Session: {}]: Bridge not available.", sessionId);
-            return value * 1.05f; 
+            return value * 1.05f;
         }
 
         log.info("METAL-EXECUTION [M3 GPU] [Session: {}]: Executing native-accelerated inference.", sessionId);
-        
+
         // In a real scenario, we'd tokenize 'value' or pass it as a prompt.
         // For this demo, we simulate a small token list and take the first output token as a float.
         List<Integer> result = bridge.generate(List.of((int) value), 1);

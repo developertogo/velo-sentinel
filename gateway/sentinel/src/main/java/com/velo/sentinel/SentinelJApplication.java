@@ -13,7 +13,7 @@ public class SentinelJApplication {
 
 	/**
 	 * Launches the Velo-Sentinel gateway.
-	 * 
+	 *
 	 * @param args Command line arguments.
 	 */
 	public static void main(String[] args) {

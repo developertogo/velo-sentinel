@@ -14,8 +14,14 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * TritonBackend: The Legacy Inference Engine (Ground Truth).
- * Maintains backwards compatibility with established NVIDIA Triton deployments.
+ * TritonBackend: The "Reliable Old Guard."
+ *
+ * NVIDIA Triton is a very popular and stable system for running AI models.
+ * In this project, we treat Triton as our "Ground Truth." This means if we're
+ * ever unsure about an answer, we trust Triton's answer the most.
+ *
+ * This class handles the "Phone Call" (gRPC) to the Triton server and
+ * translates the answer it gives back.
  */
 @Service
 public class TritonBackend implements InferenceBackend {
@@ -54,15 +60,15 @@ public class TritonBackend implements InferenceBackend {
         // Call Triton via the hardened gRPC client
         ModelInferResponse response = tritonClient.infer(value, modelName);
 
-        // Extraction Logic: Triton returns results in a raw binary buffer
+        // --- TRANSLATION LOGIC ---
+        // AI models often speak in "Binary" (zeros and ones, or "Bytes").
+        // This code takes those raw bytes and translates them back into a "Float"
+        // ( a decimal number like 0.85) that humans and the rest of our code can understand.
         if (response.getRawOutputContentsCount() == 0) {
-            log.error("TRITON-ERROR: Response contains no output tensors.");
             throw new RuntimeException("Empty response from Triton");
         }
-
         byte[] rawBytes = response.getRawOutputContents(0).toByteArray();
 
-        // Convert bytes → float
         return ByteBuffer.wrap(rawBytes)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .getFloat();

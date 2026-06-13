@@ -8,8 +8,8 @@ import java.util.List;
 
 /**
  * VeloCoreBridge: The "Hardware-Aware" Native Bridge.
- * 
- * Uses Java 25 Foreign Function &amp; Memory (FFM) API to orchestrate 
+ *
+ * Uses Java 25 Foreign Function &amp; Memory (FFM) API to orchestrate
  * the Velo-Core Rust engine via zero-copy memory segments.
  */
 public class VeloCoreBridge implements AutoCloseable {
@@ -50,7 +50,7 @@ public class VeloCoreBridge implements AutoCloseable {
 
     /**
      * Initializes the bridge and loads the native engine into memory.
-     * 
+     *
      * @param nativeLib The library loader service.
      * @param modelName The name of the model to load.
      * @param maxSlots Maximum number of concurrent inference slots.
@@ -58,7 +58,7 @@ public class VeloCoreBridge implements AutoCloseable {
      */
     public VeloCoreBridge(VeloNativeLibrary nativeLib, String modelName, long maxSlots, long maxContextTokens) {
         this.arena = Arena.ofShared();
-        
+
         SymbolLookup lookup = nativeLib.getLookup();
         Linker linker = nativeLib.getLinker();
 
@@ -70,7 +70,7 @@ public class VeloCoreBridge implements AutoCloseable {
         try {
             MemorySegment cModelName = arena.allocateFrom(modelName);
             this.engineHandle = (MemorySegment) veloCoreEngineNew.invokeExact(cModelName, maxSlots, maxContextTokens);
-            
+
             if (engineHandle.equals(MemorySegment.NULL)) {
                 throw new RuntimeException("Failed to initialize Velo-Core native engine");
             }
@@ -81,7 +81,7 @@ public class VeloCoreBridge implements AutoCloseable {
 
     /**
      * Executes native inference via zero-copy memory segments.
-     * 
+     *
      * @param prompt The list of input token IDs.
      * @param maxNewTokens The maximum number of tokens to generate.
      * @return A list of generated token IDs.
@@ -104,11 +104,11 @@ public class VeloCoreBridge implements AutoCloseable {
             }
 
             long outputLen = cOutputLen.get(ValueLayout.JAVA_LONG, 0);
-            
+
             // Map the native memory to a segment for zero-copy access
             MemorySegment resultSegment = tokensPtr.reinterpret(outputLen * 4);
             int[] resultArr = resultSegment.toArray(ValueLayout.JAVA_INT);
-            
+
             List<Integer> resultList = new ArrayList<>();
             for (int val : resultArr) {
                 resultList.add(val);

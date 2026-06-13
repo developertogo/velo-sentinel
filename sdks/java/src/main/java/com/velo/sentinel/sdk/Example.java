@@ -11,7 +11,7 @@ public class Example {
 
     /**
      * Runs the SDK usage demonstration.
-     * 
+     *
      * @param args Command line arguments (not used).
      * @throws Exception If any error occurs during inference.
      */
@@ -36,7 +36,7 @@ public class Example {
             System.out.println("DEBUG: Sending synchronous request...");
             InferenceResponse response = client.infer(request);
 
-            System.out.println("SUCCESS: Prediction: " + response.prediction() + 
+            System.out.println("SUCCESS: Prediction: " + response.prediction() +
                                " | Status: " + response.status());
 
             // 4. Execute asynchronous inference with hedging

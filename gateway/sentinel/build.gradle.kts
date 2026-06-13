@@ -78,7 +78,7 @@ dependencies {
   implementation("io.opentelemetry:opentelemetry-sdk")
   implementation("io.opentelemetry:opentelemetry-exporter-otlp")
   implementation("io.opentelemetry:opentelemetry-sdk-extension-autoconfigure")
-  
+
   // Bridge Micrometer to OpenTelemetry
   implementation("io.micrometer:micrometer-tracing-bridge-otel:1.4.0")
 

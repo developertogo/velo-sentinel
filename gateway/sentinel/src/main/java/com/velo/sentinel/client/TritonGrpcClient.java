@@ -45,7 +45,7 @@ public class TritonGrpcClient {
     public void init() {
         String target = "dns:///" + host + ":" + port;
         log.info("TRITON-CLIENT: Connecting with Client-Side LB to target: {} (Model: {})", target, modelName);
-        
+
         this.channel = ManagedChannelBuilder
                 .forTarget(target)
                 .defaultLoadBalancingPolicy("round_robin")
@@ -57,7 +57,7 @@ public class TritonGrpcClient {
 
     /**
      * Executes an inference call to the legacy Triton backend using the configured default model.
-     * 
+     *
      * @param value The input float value.
      * @return The raw ModelInferResponse from Triton.
      */
@@ -68,7 +68,7 @@ public class TritonGrpcClient {
     /**
      * Executes an inference call to the legacy Triton backend for a specific model.
      * Uses the standard ModelInferRequest pattern required by NVIDIA.
-     * 
+     *
      * @param value The input float value.
      * @param modelNameOverride The name of the model to target on the Triton server.
      * @return The raw ModelInferResponse from Triton.
@@ -96,9 +96,9 @@ public class TritonGrpcClient {
 
             // 4. Execute with a timeout to ensure SLO compliance
             return stub.withDeadlineAfter(200, TimeUnit.MILLISECONDS).modelInfer(request);
-            
+
         } catch (StatusRuntimeException e) {
-            log.error("TRITON-CLIENT-ERROR: gRPC call failed for model {}. Status: {}, Description: {}", 
+            log.error("TRITON-CLIENT-ERROR: gRPC call failed for model {}. Status: {}, Description: {}",
                     modelNameOverride, e.getStatus().getCode(), e.getStatus().getDescription());
             throw e;
         }
@@ -106,7 +106,7 @@ public class TritonGrpcClient {
 
     /**
      * Health check: Verifies if the Triton server is alive.
-     * 
+     *
      * @return {@code true} if Triton is live, {@code false} otherwise.
      */
     public boolean checkHealth() {

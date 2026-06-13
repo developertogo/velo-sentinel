@@ -64,7 +64,7 @@ public class SentinelSecurityTests {
         // Mock health checks to return true by default
         when(tritonClient.checkHealth()).thenReturn(true);
         when(dynamoClient.checkHealth()).thenReturn(true);
-        
+
         // Mock inference calls to avoid gRPC errors
         // Mock inference calls to avoid gRPC errors
         com.velo.sentinel.grpc.ModelInferResponse mockResponse = com.velo.sentinel.grpc.ModelInferResponse.newBuilder()

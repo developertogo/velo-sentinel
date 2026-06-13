@@ -26,11 +26,11 @@ public class SentinelScalingControllerTests {
     void testGetScalingMetrics_ReturnsHealthyStatus() {
         when(adaptiveBatcher.getConcurrencyScore()).thenReturn(0.5);
         when(adaptiveBatcher.getBackpressureFactor()).thenReturn(1.2);
-        
+
         Map<String, Object> response = controller.getScalingMetrics();
-        
+
         assertThat(response.get("status")).isEqualTo("HEALTHY");
-        
+
         Map<String, Object> metrics = (Map<String, Object>) response.get("metrics");
         assertThat(metrics.get("backpressure_factor")).isEqualTo(1.2);
     }

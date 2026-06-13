@@ -34,13 +34,13 @@ public class TritonBackendTests {
 
     /**
      * Workflow: Binary Extraction (FP32).
-     * Verification: Verifies that TritonBackend correctly parses the raw binary 
+     * Verification: Verifies that TritonBackend correctly parses the raw binary
      * response from Triton (4 bytes, Little Endian) into a Java float.
      */
     @Test
     void testInfer_BinaryParsing_Success() {
         float expectedValue = 123.45f;
-        
+
         // Prepare 4 bytes in Little Endian (Standard NVIDIA/CUDA order)
         byte[] rawBytes = ByteBuffer.allocate(4)
                 .order(ByteOrder.LITTLE_ENDIAN)
@@ -54,13 +54,13 @@ public class TritonBackendTests {
         when(mockClient.infer(anyFloat(), anyString())).thenReturn(mockResponse);
 
         float result = tritonBackend.infer(1.0f);
-        
+
         assertThat(result).isEqualTo(expectedValue);
     }
 
     /**
      * Workflow: Defensive Error Handling.
-     * Verification: Ensures the backend throws a RuntimeException when the 
+     * Verification: Ensures the backend throws a RuntimeException when the
      * Triton response contains no output tensors, preventing NullPointerExceptions.
      */
     @Test
@@ -75,7 +75,7 @@ public class TritonBackendTests {
 
     /**
      * Workflow: Session Awareness.
-     * Verification: Ensures the session ID is passed down correctly through the 
+     * Verification: Ensures the session ID is passed down correctly through the
      * overloaded infer methods (implicitly verified by successful execution).
      */
     @Test

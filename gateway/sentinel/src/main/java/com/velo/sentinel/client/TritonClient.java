@@ -24,7 +24,7 @@ public class TritonClient {
 
   /**
    * Executes a synchronous REST inference call.
-   * 
+   *
    * @param value The input float value.
    * @return The raw JSON response from Triton.
    */

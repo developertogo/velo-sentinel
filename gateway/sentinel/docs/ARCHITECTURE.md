@@ -12,7 +12,7 @@ graph TD
     Controller -->|Scoped Context| Bridge[DynamoBridgeService]
     Bridge -->|Async Shadow| Dynamo[Dynamo Backend]
     Bridge -->|Primary Route| Triton[Triton Backend]
-    
+
     subgraph Enterprise Layers
         Auth[ApiKeyFilter]
         Throttle[RequestThrottler]

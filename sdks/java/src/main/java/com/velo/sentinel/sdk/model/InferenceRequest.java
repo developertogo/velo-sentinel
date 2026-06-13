@@ -2,7 +2,7 @@ package com.velo.sentinel.sdk.model;
 
 /**
  * InferenceRequest: Modern Data Transfer Object for Velo-Sentinel requests.
- * 
+ *
  * @param sessionId Unique identifier for the user session, used for affinity and drift monitoring.
  * @param modelName The name of the target model (e.g., "llama-3-8b").
  * @param value The primary input value for the inference.
@@ -25,7 +25,7 @@ public record InferenceRequest(
      */
     public InferenceRequest {
         if (priority == null) {
-            priority = PriorityTier.INTERACTIVE; 
+            priority = PriorityTier.INTERACTIVE;
         }
         if (complexity == null) {
             complexity = 0;
@@ -34,10 +34,10 @@ public record InferenceRequest(
             precision = ModelPrecision.FP16; // Default to FP16
         }
     }
-    
+
     /**
      * Legacy constructor for simplified usage.
-     * 
+     *
      * @param sessionId The session ID.
      * @param modelName The model name.
      * @param value The input value.

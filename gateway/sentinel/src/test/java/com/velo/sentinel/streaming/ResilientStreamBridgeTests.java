@@ -74,7 +74,7 @@ public class ResilientStreamBridgeTests {
         assertThat(results.get(0).content()).isEqualTo("P0");
         assertThat(results.get(2).content()).isEqualTo("F2");
         assertThat(results.get(4).isLast()).isTrue();
-        
+
         verify(primary, times(1)).streamInfer(anyFloat(), anyString(), anyString());
         verify(fallback, times(1)).streamInfer(anyFloat(), anyString(), anyString());
     }

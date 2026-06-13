@@ -21,7 +21,7 @@ public class DynamoGrpcClientTests {
     @BeforeEach
     void setup() {
         client = new DynamoGrpcClient();
-        
+
         mockChannel = mock(ManagedChannel.class);
         mockStub = mock(DynamoServiceGrpc.DynamoServiceBlockingStub.class);
 

@@ -16,7 +16,7 @@ class SentinelClient:
         self.stub = grpc_service_pb2_grpc.GRPCInferenceServiceStub(self.channel)
 
     def infer(self, value, model_name="simple", session_id="python-client", timeout=1.0):
-        contents = inference_pb2.InferTensorContents(fp32_contents=[value])
+        contents = grpc_service_pb2.InferTensorContents(fp32_contents=[value])
         input_tensor = grpc_service_pb2.ModelInferRequest.InferInputTensor(
             name="INPUT", datatype="FP32", shape=[1], contents=contents
         )

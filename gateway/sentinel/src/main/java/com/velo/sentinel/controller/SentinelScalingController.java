@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * SentinelScalingController: The "Brain" for the Dynamo-Aware K8s Operator.
- * 
+ *
  * Exposes real-time backend pressure and predictive scaling signals.
  * A custom K8s Operator queries this to perform preemptive GPU rebalancing.
  */
@@ -21,7 +21,7 @@ public class SentinelScalingController {
 
     /**
      * Initializes the controller with the adaptive batcher to monitor pressure.
-     * 
+     *
      * @param adaptiveBatcher The service providing real-time load signals.
      */
     public SentinelScalingController(AdaptiveBatcher adaptiveBatcher) {
@@ -30,14 +30,14 @@ public class SentinelScalingController {
 
     /**
      * Returns predictive scaling metrics for external orchestration (e.g. Kubernetes HPA).
-     * 
+     *
      * @return A map containing concurrency scores, backpressure factors, and scaling recommendations.
      */
     @GetMapping("/scaling-metrics")
     public Map<String, Object> getScalingMetrics() {
         double concurrencyScore = adaptiveBatcher.getConcurrencyScore();
         double backpressureFactor = adaptiveBatcher.getBackpressureFactor();
-        
+
         return Map.of(
             "status", "HEALTHY",
             "metrics", Map.of(

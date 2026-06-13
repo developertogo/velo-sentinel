@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * HealthController: Custom Readiness Probes for Kubernetes.
- * 
+ *
  * Provides a dedicated endpoint for orchestrators to verify gateway readiness.
  * Checks connectivity to all critical inference backends before signaling UP.
  */
@@ -22,7 +22,7 @@ public class HealthController {
 
     /**
      * Initializes the controller with necessary backend clients.
-     * 
+     *
      * @param tritonClient The legacy Triton gRPC client.
      * @param dynamoClient The disaggregated Dynamo gRPC client.
      */
@@ -33,7 +33,7 @@ public class HealthController {
 
     /**
      * Aggregated health check for Kubernetes readiness probes.
-     * 
+     *
      * @return A map containing the status of all critical backends.
      */
     @GetMapping("/health")

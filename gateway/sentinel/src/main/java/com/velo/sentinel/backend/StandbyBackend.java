@@ -23,7 +23,7 @@ public class StandbyBackend implements InferenceBackend {
 
     /**
      * Initializes the standby backend with a dedicated cross-region gRPC client.
-     * 
+     *
      * @param standbyClient The gRPC client connected to the failover region.
      */
     public StandbyBackend(StandbyTritonClient standbyClient) {

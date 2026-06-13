@@ -11,7 +11,7 @@ The following features are production-ready. Click the links for detailed docume
 | **Resilience** | **[🛡️ Resilience & Chaos Engineering](gateway/sentinel/docs/RESILIENCE.md)** — Circuit breakers, hedging, and fault injection.<br>**[🌍 Multi-Cloud Disaster Recovery](gateway/sentinel/docs/DISASTER_RECOVERY.md)** — Cross-cloud failover strategies. |
 | **Efficiency** | **[⚖️ Adaptive Batching Strategies](gateway/sentinel/docs/BATCHING.md)** — Optimizing TFLOPS via intelligent request grouping.<br>**[⚡ SLA-Aware Priority Queuing](gateway/sentinel/docs/PRIORITY_QUEUING.md)** — Dynamic deadline resolution and priority-based scheduling.<br>**[⚙️ NVIDIA Dynamo-Aware Scaling](gateway/sentinel/docs/SCALING.md)** — Predictive HPA and backend pressure metrics. |
 | **Governance** | **[🔐 Enterprise Governance & Privacy](gateway/sentinel/docs/GOVERNANCE.md)** — PII scrubbing, authentication, and audit logging.<br>**[🔒 Security & Authentication](gateway/sentinel/docs/SECURITY.md)** — API Key management and endpoint protection. |
-| **Hardware** | **[🚀 Performance & Benchmarks](gateway/sentinel/docs/PERFORMANCE.md)** — Latency results and hardware-specific optimizations **[Velo-Core](https://github.com/developertogo/velo-core)**. |
+| **Hardware** | **[🚀 Performance & Benchmarks](gateway/sentinel/docs/PERFORMANCE.md)** — Latency results and hardware-specific optimizations.<br>**[🏛️  Unified Architecture](gateway/sentinel/docs/UNIFIED-ARCHITECTURE.md)** — Full-stack integration with **[Velo-Core](https://github.com/developertogo/velo-core)**. |
 
 ## Mission
 To provide a **foundational computational platform** for global-scale ML/AI applications, bridging the gap between legacy infrastructure and disaggregated, hardware-aware serving through the **Four Pillars of Inference Scale**: Concurrency, Resilience, Efficiency, and Governance.
@@ -29,6 +29,16 @@ To provide a **foundational computational platform** for global-scale ML/AI appl
 - **Safety & Observability**: Real-time **Accuracy Drift Monitoring** and **Shadow-Mode Validation** to ensure model parity during migration.
 - **Hybrid Hardware Orchestration**: Seamlessly routing between Cloud GPUs and **Local Metal/AMX acceleration** ([Velo-Core](https://github.com/developertogo/velo-core)) for edge-aware inference.
 
+## 🏛️  Unified Architecture
+
+Velo-Sentinel acts as the sophisticated orchestration layer for the **[Velo-Core](https://github.com/developertogo/velo-core)** (Rust/Metal) engine. Together, they form a complete, disaggregated inference stack:
+
+- **Local Acceleration**: Sub-millisecond routing via the Java Foreign Function & Memory (FFM) API directly to the Rust backend.
+- **Shared Philosophy**: Unified approach to Prefill/Decode separation and cache-aware load balancing.
+- **Strategic Deployment**: A cohesive lifecycle spanning from local hardware (Core) to global cloud distributed clusters (Sentinel).
+
+For more details, see the **[Unified Architecture Documentation](gateway/sentinel/docs/UNIFIED-ARCHITECTURE.md)**.
+
 ## Architecture
 Velo-Sentinel follows modern high-performance architectural patterns, prioritizing **Structured Concurrency** over legacy Reactive patterns.
 
@@ -42,29 +52,29 @@ Velo-Sentinel follows modern high-performance architectural patterns, prioritizi
 graph TD
     User([User Request]) --> Controller[InferenceController]
     Controller --> Bridge[DynamoBridgeService]
-    
+
     subgraph "Orchestration Layer (Virtual Threads)"
         Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
         TaskScope -->|Primary| Dynamo[DynamoBackend]
         TaskScope -->|Shadow| Triton[TritonBackend]
         Bridge -->|Hybrid Path| Metal[MetalBackend]
-        
+
         Dynamo -->|Session Lookup| Redis[(Redis KV-Registry)]
         Redis -.->|Cache Status| Dynamo
-        
+
         Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
         RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
         RC -.->|Fallback| Triton
-        
+
         Metal -->|Java FFM API| VeloCore[Velo-Core Engine]
     end
-    
+
     Triton --> T_GRPC[Triton gRPC Client]
-    
+
     D_GRPC --> DB[(Dynamo Backend)]
     T_GRPC --> TB[(Legacy Triton Backend)]
     VeloCore -->|Apple Silicon| GPU[Metal / AMX Acceleration]
-    
+
     Bridge --> Metrics[Micrometer Metrics]
     Metrics --> Prometheus[Prometheus / Grafana]
 
@@ -90,29 +100,29 @@ graph TD
 graph TD
     User([User Request]) --> Controller[InferenceController]
     Controller --> Bridge[DynamoBridgeService]
-    
+
     subgraph "Orchestration Layer (Virtual Threads)"
         Bridge -->|Shadow Mode| TaskScope[StructuredTaskScope]
         TaskScope -->|Primary| Dynamo[DynamoBackend]
         TaskScope -->|Shadow| Triton[TritonBackend]
         Bridge -->|Hybrid Path| Metal[MetalBackend]
-        
+
         Dynamo -->|Session Lookup| Redis[(Redis KV-Registry)]
         Redis -.->|Cache Status| Dynamo
-        
+
         Dynamo -->|AOP Proxy| RC[DynamoResilienceComponent]
         RC -->|Circuit Breaker| D_GRPC[Dynamo gRPC Client]
         RC -.->|Fallback| Triton
-        
+
         Metal -->|Java FFM API| VeloCore[Velo-Core Engine]
     end
-    
+
     Triton --> T_GRPC[Triton gRPC Client]
-    
+
     D_GRPC --> DB[(Dynamo Backend)]
     T_GRPC --> TB[(Legacy Triton Backend)]
     VeloCore -->|Apple Silicon| GPU[Metal / AMX Acceleration]
-    
+
     Bridge --> Metrics[Micrometer Metrics]
     Metrics --> Prometheus[Prometheus / Grafana]
 
@@ -192,7 +202,7 @@ graph TD
    ```bash
    # For the Gateway
    cd gateway/sentinel && ./gradlew javadoc
-   
+
    # For the Java SDK
    cd sdks/java && ./gradlew javadoc
    ```
@@ -209,6 +219,29 @@ graph TD
    ```
    The report URL is: `file:///${PWD}/gateway/sentinel/build/reports/jacoco/test/html/index.html`
    The unit test coverage is **>84%**.
+
+---
+
+## 🎯 Active Research & Roadmap (H2 2026)
+Velo-Sentinel is evolving from a pure inference gateway into a comprehensive **Model Runtime Lifecycle Platform**, specifically targeting the alignment and training infrastructure needs of next-generation GenAI workloads.
+
+### 1. Alignment & Post-Training Orchestration
+*   **Reward Model Interceptors**: Implementing automated routing for **RLHF/DPO/GRPO** loops. This allows Sentinel to intercept completions, trigger external reward models, and log preference pairs for automated model alignment.
+*   **Active Learning Triggers**: Detecting "Low Confidence" generations in real-time and automatically flagging them for human-in-the-loop (HITL) preference optimization.
+*   **Online/Offline Consistency Bridge**: Implementing schema-enforcement layers to ensure feature parity between training-time (offline) and inference-time (online) environments.
+
+### 2. Distributed Training Infrastructure
+*   **FSDP & Parallelism Coordination**: Developing a control plane for fault-tolerant distributed training. This includes orchestrating **Tensor, Pipeline, and Context Parallelism** across large clusters.
+*   **Mixed-Precision Lifecycle**: Automating the transition between BF16/FP16/INT8 precisions across the training-to-inference lifecycle to minimize quantization drift.
+
+### 3. Multi-Modal GenAI Support
+*   **Binary Stream Processing**: Expanding the gateway to handle disaggregated inputs for **Multimodal (Vision/Audio)** and **Diffusion** models.
+*   **Media-Aware Asynchronous Pipelines**: Engineering chunked, parallelized pipelines specifically for high-throughput localization workflows (subtitles, dubbing, and cultural adaptation).
+*   **Asynchronous GPU Pipelines**: Engineering non-blocking pipelines specifically for high-throughput image and video generation workloads.
+
+### 4. Economic Observability & Strategy
+*   **Compute Unit (CU) Metering**: Granular tracking of GPU cycles, memory bandwidth, and KV-cache utilization per session.
+*   **Infrastructure Cost Modeling**: Real-time ROI analysis of "Model Performance vs. Inference Cost" to inform large-scale infrastructure strategy.
 
 ---
 
