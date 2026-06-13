@@ -68,9 +68,9 @@ public class TritonGrpcClientTests {
     void testShutdownInterrupted() throws InterruptedException {
         when(mockChannel.shutdown()).thenReturn(mockChannel);
         when(mockChannel.awaitTermination(anyLong(), any(TimeUnit.class))).thenThrow(new InterruptedException());
-        
+
         client.shutdown();
-        
+
         verify(mockChannel).shutdownNow();
     }
 

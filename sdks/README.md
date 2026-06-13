@@ -14,7 +14,7 @@ This directory contains the high-performance clients for the Velo-Sentinel Infer
 The Java SDK is a Gradle-based library. You can build the JAR and install it to your local Maven repository:
 ```bash
 cd sdks/java
-./gradlew jar 
+./gradlew jar
 ```
 
 ### 2. Running the Example

@@ -37,12 +37,12 @@ public class DynamoBackendTests {
     void testSessionRegistry_WarmUpFlow() {
         String sessionId = "user-99";
         when(mockClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(5.0f);
-        
+
         // Simulate initial COLD state
         when(mockCacheRegistry.isSessionWarm(sessionId)).thenReturn(false);
 
         dynamoBackend.infer(1.0f, sessionId);
-        
+
         // Verify it marked session as active on the internal backend node
         verify(mockCacheRegistry).markSessionActive(eq(sessionId), anyString());
 

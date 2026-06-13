@@ -72,7 +72,7 @@ public class SentinelInferenceTests {
             String model = invocation.getArgument(2);
             boolean isPrefill = invocation.getArgument(4);
             java.util.function.Function<java.util.List<com.velo.sentinel.service.AdaptiveBatcher.BatchItem>, java.util.List<Float>> task = invocation.getArgument(5);
-            
+
             return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                 com.velo.sentinel.service.AdaptiveBatcher.BatchItem item = new com.velo.sentinel.service.AdaptiveBatcher.BatchItem(val, session, model, isPrefill);
                 java.util.List<Float> results = task.apply(java.util.List.of(item));
@@ -92,7 +92,7 @@ public class SentinelInferenceTests {
             java.util.function.Supplier<?> task = invocation.getArgument(1);
             return task.get();
         });
-        
+
         tritonBackend = new TritonBackend(tritonClient);
         dynamoBackend = new DynamoBackend(dynamoGrpcClient, cacheRegistry);
         // Use a Spy to simulate Spring AOP / Circuit Breaker behavior in a unit test
@@ -119,7 +119,7 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: Standard Legacy Path.
-     * Verification: Ensures that when RoutingMode is TRITON, the gateway 
+     * Verification: Ensures that when RoutingMode is TRITON, the gateway
      * bypasses next-gen logic and returns the Ground Truth prediction.
      */
     @Test
@@ -131,7 +131,7 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: Next-Gen Dynamo Path (Migration Target).
-     * Verification: Validates that DYNAMO mode correctly routes requests 
+     * Verification: Validates that DYNAMO mode correctly routes requests
      * to the gRPC backend and respects the session context.
      */
     @Test
@@ -144,22 +144,22 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: Redis Outage Resilience.
-     * Verification: Confirms that if the Redis KV-Cache registry is down, 
-     * the gateway "Fails-Open" to a Cold Start (assume session is not warm) 
+     * Verification: Confirms that if the Redis KV-Cache registry is down,
+     * the gateway "Fails-Open" to a Cold Start (assume session is not warm)
      * and continues inference instead of failing the request.
      */
     @Test
     void testRoutingModeDynamo_RedisFailure() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
-        
+
         // Simulate Redis Connection Error
         when(redisTemplate.hasKey(anyString())).thenThrow(new RuntimeException("Redis Connection Refused"));
-        
+
         // Mock Dynamo Success
         when(dynamoGrpcClient.callDynamo(5.0f, "test-session", "simple")).thenReturn(15.0f);
-        
+
         float result = bridgeService.infer(5.0f, "test-session", "simple");
-        
+
         // Should succeed by defaulting to Cold Start
         assertThat(result).isEqualTo(15.0f);
         verify(dynamoGrpcClient).callDynamo(5.0f, "test-session", "simple");
@@ -167,7 +167,7 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: Dual-Inference Shadow Mode.
-     * Verification: Confirms that both backends are invoked and that 
+     * Verification: Confirms that both backends are invoked and that
      * model drift (delta) is correctly calculated and recorded in Micrometer.
      */
     @Test
@@ -181,7 +181,7 @@ public class SentinelInferenceTests {
 
         assertThat(result).isEqualTo(10.0f);
         verify(tritonClient, atLeastOnce()).infer(5.0f, "simple");
-        
+
         var driftMetric = meterRegistry.find("velo.sentinel.shadow.drift").summary();
         if (driftMetric != null) {
             assertThat(driftMetric.mean()).isEqualTo(0.5, org.assertj.core.data.Offset.offset(0.001));
@@ -190,7 +190,7 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: Shadow Mode SLO Veto.
-     * Verification: Ensures that if the Dynamo path exceeds the latency 
+     * Verification: Ensures that if the Dynamo path exceeds the latency
      * threshold (e.g. 10ms), the comparison is pruned to protect gateway latency.
      */
     @Test
@@ -198,7 +198,7 @@ public class SentinelInferenceTests {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
         setField(bridgeService, "latencyThresholdMs", 10.0);
         setupTritonMock(10.0f);
-        
+
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenAnswer(inv -> {
             Thread.sleep(500);
             return 15.0f;
@@ -210,8 +210,8 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: SLO Veto (DYNAMO Mode).
-     * Verification: Confirms that in DYNAMO mode, if the request exceeds 
-     * the latency threshold, the gateway "Vetoes" the Dynamo path and 
+     * Verification: Confirms that in DYNAMO mode, if the request exceeds
+     * the latency threshold, the gateway "Vetoes" the Dynamo path and
      * falls back to Triton to protect P99 latency.
      */
     @Test
@@ -219,7 +219,7 @@ public class SentinelInferenceTests {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
         setField(bridgeService, "latencyThresholdMs", 50.0);
         setupTritonMock(10.0f);
-        
+
         // Simulate a slow Dynamo backend (exceeds 50ms)
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenAnswer(inv -> {
             Thread.sleep(200);
@@ -235,7 +235,7 @@ public class SentinelInferenceTests {
 
     /**
      * Workflow: High Availability Fallback.
-     * Verification: Validates that the DynamoResilienceComponent correctly 
+     * Verification: Validates that the DynamoResilienceComponent correctly
      * fails open to Triton when a backend failure is simulated.
      */
     @Test
@@ -247,14 +247,14 @@ public class SentinelInferenceTests {
     /**
      * Workflow: E2E Fail-Open Orchestration.
      * Verification: Confirms that when Dynamo fails at the gRPC level,
-     * the BridgeService successfully intercepts the error and returns 
+     * the BridgeService successfully intercepts the error and returns
      * the Triton result without crashing the request.
      */
     @Test
     void testE2EFailOpen() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
         setupTritonMock(10.0f);
-        
+
         // Simulate a hard gRPC failure in the backend
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString()))
             .thenThrow(new RuntimeException("Dynamo Backend Unavailable"));
@@ -265,9 +265,9 @@ public class SentinelInferenceTests {
                 return inv.callRealMethod();
             } catch (Throwable t) {
                 return resilienceComponent.failOpenToTriton(
-                    (float)inv.getArgument(0), 
-                    (String)inv.getArgument(1), 
-                    (String)inv.getArgument(2), 
+                    (float)inv.getArgument(0),
+                    (String)inv.getArgument(1),
+                    (String)inv.getArgument(2),
                     t
                 );
             }
@@ -300,13 +300,13 @@ public class SentinelInferenceTests {
     void testExecuteInferenceExceptionRecording() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.TRITON);
         when(tritonClient.infer(anyFloat(), anyString())).thenThrow(new RuntimeException("Core Failure"));
-        
+
         try {
             bridgeService.infer(5.0f, "test-session", "simple");
         } catch (Exception e) {
             assertThat(e.getMessage()).isEqualTo("Core Failure");
         }
-        
+
         var counter = meterRegistry.find("velo.sentinel.errors").counter();
         assertThat(counter).isNotNull();
         assertThat(counter.count()).isEqualTo(1.0);
@@ -316,7 +316,7 @@ public class SentinelInferenceTests {
     void testRoutingModeShadow_TritonFailure() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.SHADOW);
         setField(bridgeService, "latencyThresholdMs", 1000.0);
-        
+
         // Triton fails during the task scope
         when(tritonClient.infer(anyFloat(), anyString())).thenThrow(new RuntimeException("Triton internal error"));
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(10.5f);
@@ -368,7 +368,7 @@ public class SentinelInferenceTests {
     void testChaosInjection_Failover() {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.DYNAMO);
         setupTritonMock(10.0f);
-        
+
         // Enable chaos and force a failure injection
         doThrow(new RuntimeException("CHAOS-INJECTION: Synthetic failure"))
             .when(chaosComponent).maybeInjectChaos(anyString());
@@ -385,7 +385,7 @@ public class SentinelInferenceTests {
         PrivacyScrubberService scrubber = new PrivacyScrubberService();
         String rawPrompt = "Hello, my email is john.doe@example.com and my SSN is 123-45-6789.";
         String expected = "Hello, my email is [EMAIL_REDACTED] and my SSN is [SSN_REDACTED].";
-        
+
         assertThat(scrubber.scrub(rawPrompt)).isEqualTo(expected);
     }
 
@@ -394,7 +394,7 @@ public class SentinelInferenceTests {
         setField(bridgeService, "routingMode", DynamoBridgeService.RoutingMode.CANARY);
         setField(bridgeService, "canaryPercentage", 100); // All to Dynamo
         when(dynamoGrpcClient.callDynamo(anyFloat(), anyString(), anyString())).thenReturn(20.0f);
-        
+
         float result = bridgeService.infer(5.0f, "session-canary", "simple");
         assertThat(result).isEqualTo(20.0f);
 

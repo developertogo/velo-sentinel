@@ -9,7 +9,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * SentinelResilienceTests: Verifying the Decoupled Resilience Layer.
- * 
+ *
  * This suite confirms that the DynamoResilienceComponent correctly implements
  * the fail-open logic, ensuring that any failure in the Dynamo path defaults
  * to the Triton Ground Truth.
@@ -18,7 +18,7 @@ public class SentinelResilienceTests {
 
     /**
      * Workflow: Manual Fallback Activation.
-     * Verification: Confirms that the ResilienceComponent correctly 
+     * Verification: Confirms that the ResilienceComponent correctly
      * switches to the Triton Ground Truth when an exception is intercepted.
      */
     @Test

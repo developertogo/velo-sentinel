@@ -27,11 +27,21 @@ import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 /**
- * DynamoBridgeService: The L5 Migration Controller.
- * 
- * Orchestrates routing between legacy Triton and next-gen Dynamo architectures.
- * Uses DynamoResilienceComponent for fault-tolerant execution.
- * Supports Multi-model Dynamic Routing and OpenTelemetry Tracing.
+ * DynamoBridgeService: The "Air Traffic Controller" of the Velo Inference System.
+ *
+ * Imagine you're at a busy airport. Some planes are small (private jets), some are huge (commercial airliners).
+ * Some flights are urgent, others can wait. This class is the controller that decides:
+ * 1. Which runway (backend) each "inference request" should use.
+ * 2. If a request should be "hedged" (sending two planes to the same destination to see which arrives first).
+ * 3. If we should "shadow" a flight (fly a test plane alongside a real one to compare performance).
+ *
+ * Specifically, it orchestrates routing between:
+ * - **Triton**: The reliable, "legacy" runway (NVIDIA Triton Inference Server).
+ * - **Dynamo**: The new, high-performance "next-gen" runway.
+ * - **Metal**: A local "private strip" (Apple Silicon GPU) for small, private tasks.
+ *
+ * It also handles security (scrubbing private info), reliability (retrying if things break),
+ * and "speed boosts" like caching (remembering previous answers) and speculative decoding.
  */
 @Service
 @Primary
@@ -75,20 +85,20 @@ public class DynamoBridgeService implements InferenceBackend {
    */
   public enum RoutingMode {
     /** Routes all traffic to the legacy Triton backend. */
-    TRITON, 
+    TRITON,
     /** Routes traffic to the disaggregated Dynamo backend. */
-    DYNAMO, 
+    DYNAMO,
     /** Synchronous Triton with background Dynamo validation. */
-    SHADOW, 
+    SHADOW,
     /** Progressive rollout with session-based splitting. */
-    CANARY, 
+    CANARY,
     /** Automated cross-cloud regional failover. */
     FAILOVER
   }
 
     /**
      * Initializes the DynamoBridgeService with its dependencies.
-     * 
+     *
      * @param tritonBackend Legacy Triton backend.
      * @param dynamoBackend Next-gen Dynamo backend.
      * @param metalBackend Local Metal backend.
@@ -142,7 +152,7 @@ public class DynamoBridgeService implements InferenceBackend {
 
   /**
    * Executes inference with a default session and model.
-   * 
+   *
    * @param value The input value for prediction.
    * @return The predicted value from the chosen backend.
    */
@@ -159,7 +169,7 @@ public class DynamoBridgeService implements InferenceBackend {
 
   /**
    * Executes inference for a specific session with a default model.
-   * 
+   *
    * @param value     The input value for prediction.
    * @param sessionId The unique identifier for the user session.
    * @param modelName The name of the model to use.
@@ -213,20 +223,31 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   /**
-   * The core inference orchestration logic.
-   * 
-   * This method implements the "Sentinel Intelligence" routing chain:
-   * 1. Hybrid Check: Local M3/Metal offloading for private/small prompts.
-   * 2. Semantic Cache: Instant return for repeat vector-similar queries.
-   * 3. Contextual Analysis: Model complexity and precision-aware routing.
-   * 4. Safety Switch: Automated Veto if accuracy drift exceeds limits.
-   * 5. Execution: Disaggregated batching, hedging, or shadow validation.
-   * 
-   * @param value     The input value.
-   * @param sessionId The session ID.
-   * @param modelName The model name.
-   * @param priority  The priority tier (SLA aware).
-   * @return The final prediction.
+   * The core inference orchestration logic. This is the "Brain" of the gateway.
+   *
+   * Think of this as a flowchart that every request must pass through:
+   *
+   * 1. **Privacy & Hybrid Check**: If the request is marked "private", we keep it on the user's
+   *    machine (Metal/GPU) instead of sending it to the cloud. This is "Privacy-by-Design."
+   * 2. **Semantic Cache**: Have we seen this exact question before? If yes, give the answer
+   *    instantly without doing any "thinking" (calculation).
+   * 3. **Speculative Decoding**: A "speed boost" where a small, fast model (Drafter)
+   *    guesses the answer, and a big model (Target) verifies it.
+   * 4. **Complexity Check**: Is this a "simple" question? If so, send it to the cheaper
+   *    efficiency node (Triton). If it's hard, send it to the high-power Dynamo node.
+   * 5. **Safety Switch**: Is the Dynamo system acting weird lately? If the "Drift Monitor"
+   *    detects that Dynamo's answers are getting inaccurate, it "Vetos" Dynamo and
+   *    forces everyone back to the reliable Triton system.
+   * 6. **Execution**: Actually run the request using the chosen strategy (Normal, Hedged, or Shadow).
+   *
+   * @param value     The input number/data for the model to process.
+   * @param sessionId A unique ID for the user (used to keep track of their conversation).
+   * @param modelName Which AI model should handle this (e.g., "Llama-3", "Mistral").
+   * @param priority  How urgent is this? (e.g., INTERACTIVE for users, BATCH for background tasks).
+   * @param complexity How "hard" is this task? (0 to 100).
+   * @param precision How "detailed" should the math be? (FP16 is standard, INT8 is faster/lower quality).
+   * @param useAgenticOptimization Should we use "smart" features like speculative decoding?
+   * @return The final answer (a number) from the AI model.
    */
   private float orchestrateInference(float value, String sessionId, String modelName, PriorityTier priority,
       int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
@@ -356,8 +377,16 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
   /**
-   * Hedged Inference: Shaves the tail of the latency distribution.
-   * Starts primary, and if it exceeds delayMs, starts a second request.
+   * Hedged Inference: "The Two-Pizza Strategy."
+   *
+   * Latency (slowness) is the enemy. Sometimes a server gets "stuck" for a second.
+   * Hedging works like this:
+   * 1. Start the request on the primary backend (e.g., Dynamo).
+   * 2. Wait a very short time (e.g., 50ms).
+   * 3. If the primary hasn't answered yet, start a SECOND request on a different backend (e.g., Triton).
+   * 4. Take whichever answer comes back first!
+   *
+   * This "shaves the tail" of slowness, ensuring the user almost never waits a long time.
    */
   private float executeHedgedInference(float value, String sessionId, String modelName, RoutingMode mode,
       PriorityTier priority, int complexity, ModelPrecision precision, boolean useAgenticOptimization) {
@@ -402,7 +431,7 @@ public class DynamoBridgeService implements InferenceBackend {
 
     /**
      * Routes a request to the legacy Triton backend.
-     * 
+     *
      * @param value The input value.
      * @param sessionId The session identifier.
      * @param modelName The model name.
@@ -415,7 +444,7 @@ public class DynamoBridgeService implements InferenceBackend {
 
     /**
      * Routes a request to the next-gen Dynamo backend using the adaptive batcher.
-     * 
+     *
      * @param value The input value.
      * @param sessionId The session identifier.
      * @param modelName The model name.
@@ -456,13 +485,22 @@ public class DynamoBridgeService implements InferenceBackend {
   }
 
     /**
-     * Executes a shadow inference workflow for validation.
-     * Returns the ground truth (Triton) result while asynchronously verifying Dynamo.
-     * 
-     * @param value The input value.
-     * @param sessionId The session identifier.
-     * @param modelName The model name.
-     * @return The ground truth result.
+     * Shadow Inference: "Trust, but Verify."
+     *
+     * When we are testing a new system (Dynamo), we don't want to risk giving the user a wrong answer.
+     * Shadow mode handles this elegantly:
+     * 1. It sends the request to the OLD reliable system (Triton) and gives that answer to the user.
+     * 2. At the EXACT same time (in the background), it sends the request to the NEW system (Dynamo).
+     * 3. It compares the two answers. If they are different, it records a "drift" error.
+     *
+     * This allows us to test Dynamo with real traffic without any risk to the users.
+     * We use "Virtual Threads" (Java's new lightweight threads) to make sure the background
+     * check doesn't slow down the main response.
+     *
+     * @param value The input data.
+     * @param sessionId The user's session.
+     * @param modelName The model being used.
+     * @return The "Ground Truth" result from the reliable Triton system.
      */
   @SuppressWarnings("preview")
   private float routeShadow(float value, String sessionId, String modelName) {

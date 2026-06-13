@@ -10,7 +10,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 /**
  * SecurityConfig: Enterprise Access Control.
- * 
+ *
  * Configures the security filter chain to enforce API Key authentication.
  * Ensures the gateway is stateless and protects critical inference endpoints.
  */
@@ -22,7 +22,7 @@ public class SecurityConfig {
 
     /**
      * Initializes the security configuration with the API key filter.
-     * 
+     *
      * @param apiKeyAuthFilter The filter responsible for validating X-API-KEY headers.
      */
     public SecurityConfig(ApiKeyAuthFilter apiKeyAuthFilter) {
@@ -31,7 +31,7 @@ public class SecurityConfig {
 
     /**
      * Defines the security filter chain.
-     * 
+     *
      * @param http The HttpSecurity configuration object.
      * @return The configured SecurityFilterChain.
      * @throws Exception If configuration fails.

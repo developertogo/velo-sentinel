@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * RequestThrottler: Per-Session SLA Enforcement.
- * 
+ *
  * Prevents any single session from saturating the inference gateway.
  * Uses a Token-Bucket algorithm (via Resilience4j) to manage request quotas.
  */
@@ -34,7 +34,7 @@ public class RequestThrottler {
 
     /**
      * Executes a task if the session has remaining quota.
-     * 
+     *
      * @param <T> The result type of the task.
      * @param sessionId The session identifier to throttle.
      * @param task The task to execute.
@@ -43,7 +43,7 @@ public class RequestThrottler {
      */
     public <T> T throttle(String sessionId, java.util.function.Supplier<T> task) {
         RateLimiter limiter = sessionLimiters.computeIfAbsent(sessionId, registry::rateLimiter);
-        
+
         return RateLimiter.decorateSupplier(limiter, task).get();
     }
 

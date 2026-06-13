@@ -39,15 +39,15 @@ public class SentinelWebSliceTests {
         bridgeService = Mockito.mock(DynamoBridgeService.class);
         streamBridge = Mockito.mock(com.velo.sentinel.streaming.ResilientStreamBridge.class);
         objectMapper = new ObjectMapper();
-        
+
         InferenceController controller = new InferenceController(bridgeService, streamBridge);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     /**
      * Workflow: End-to-End API Call.
-     * Enhancement: Verifies that the sessionId and modelName from the JSON payload 
-     * are correctly passed to the bridge service and that the REST response 
+     * Enhancement: Verifies that the sessionId and modelName from the JSON payload
+     * are correctly passed to the bridge service and that the REST response
      * matches the expected schema.
      */
     @Test
@@ -70,7 +70,7 @@ public class SentinelWebSliceTests {
 
     /**
      * Workflow: Anonymous User Support.
-     * Enhancement: Confirms that missing session IDs in the request are gracefully 
+     * Enhancement: Confirms that missing session IDs in the request are gracefully
      * handled by the controller and defaulted to "anonymous" in the response.
      */
     @Test

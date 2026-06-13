@@ -53,7 +53,7 @@ public class MockTritonServer {
             // This allows us to see the +0.5 drift from Dynamo
             float inputValue = request.getInputs(0).getContents().getFp32Contents(0);
             float tritonResult = inputValue * 2.0f;
-            
+
             byte[] resultBytes = ByteBuffer.allocate(4)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .putFloat(tritonResult)

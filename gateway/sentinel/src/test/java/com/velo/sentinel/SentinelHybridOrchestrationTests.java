@@ -42,12 +42,12 @@ public class SentinelHybridOrchestrationTests {
         @Bean @Primary public MetalBackend metalBackend() { return mock(MetalBackend.class); }
         @Bean @Primary public SpeculativeOrchestrator speculativeOrchestrator() { return mock(SpeculativeOrchestrator.class); }
         @Bean @Primary public com.velo.sentinel.service.AdaptiveBatcher adaptiveBatcher() { return mock(com.velo.sentinel.service.AdaptiveBatcher.class); }
-        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() { 
+        @Bean @Primary public com.velo.sentinel.service.KVCacheRegistry kvCacheRegistry() {
             com.velo.sentinel.service.KVCacheRegistry registry = mock(com.velo.sentinel.service.KVCacheRegistry.class);
             when(registry.isSessionWarm(anyString())).thenReturn(false);
             return registry;
         }
-        @Bean @Primary public com.velo.sentinel.service.SemanticCacheService semanticCacheService() { 
+        @Bean @Primary public com.velo.sentinel.service.SemanticCacheService semanticCacheService() {
             com.velo.sentinel.service.SemanticCacheService mockCache = mock(com.velo.sentinel.service.SemanticCacheService.class);
             when(mockCache.checkCache(anyString())).thenReturn(null);
             return mockCache;

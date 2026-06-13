@@ -21,7 +21,7 @@ long deadline = System.currentTimeMillis() + priorityTier.getSlaMs();
 ### 3. Queue Structure
 The `AdaptiveBatcher` utilizes a `PriorityBlockingQueue<InferenceTask>`.
 - The queue automatically sorts tasks based on their `deadline` (ascending order).
-- **Why this works**: 
+- **Why this works**:
   - A `REALTIME` task submitted now has a deadline of `now + 100ms`.
   - A `BACKGROUND` task submitted now has a deadline of `now + 5000ms`.
   - The `REALTIME` task is processed first.

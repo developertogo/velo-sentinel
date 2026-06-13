@@ -2,7 +2,7 @@ package com.velo.sentinel.sdk.model;
 
 /**
  * InferenceResponse: The Standardized Output DTO for Velo-Sentinel.
- * 
+ *
  * @param sessionId The original session ID to allow for request/response pairing.
  * @param prediction The float result returned by the inference model.
  * @param status Execution status (SUCCESS, FAILURE, CIRCUIT_OPEN, etc.).

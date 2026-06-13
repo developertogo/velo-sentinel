@@ -13,7 +13,7 @@ public class DynamoStreamingBackend implements StreamingInferenceBackend {
     @Override
     public Flow.Publisher<StreamEvent> streamInfer(float input, String sessionId, String modelName) {
         SubmissionPublisher<StreamEvent> publisher = new SubmissionPublisher<>();
-        
+
         // Simulate a stream of 5 tokens
         Thread.ofVirtual().start(() -> {
             try {
@@ -26,7 +26,7 @@ public class DynamoStreamingBackend implements StreamingInferenceBackend {
                 publisher.closeExceptionally(e);
             }
         });
-        
+
         return publisher;
     }
 }

@@ -20,7 +20,7 @@ public class SpeculativeOrchestrator {
 
     /**
      * Initializes the orchestrator with a local drafting backend.
-     * 
+     *
      * @param drafter The local (Metal) backend used for rapid drafting.
      */
     public SpeculativeOrchestrator(MetalBackend drafter) {
@@ -30,7 +30,7 @@ public class SpeculativeOrchestrator {
     /**
      * Executes a speculative decoding workflow.
      * Starts by drafting on the local M3 backend, then verifies the result with the cloud target.
-     * 
+     *
      * @param value The initial input value.
      * @param sessionId The session identifier.
      * @param modelName The target model name.
@@ -41,12 +41,12 @@ public class SpeculativeOrchestrator {
         log.info("SPECULATIVE-INIT [Session: {}]: Starting speculative pipeline (Drafter: M3, Target: Cloud).", sessionId);
 
         long start = System.currentTimeMillis();
-        
+
         try {
             // Step 1: Draft on local M3 with a tight timeout (e.g., 30ms)
             Float draft = CompletableFuture.supplyAsync(() -> drafter.infer(value, sessionId, "drafter-m3"))
                 .get(30, TimeUnit.MILLISECONDS);
-            
+
             log.debug("SPECULATIVE-DRAFT [Session: {}]: Draft generated: {}. Verifying with Target.", sessionId, draft);
 
             // Step 2: Verify with Target

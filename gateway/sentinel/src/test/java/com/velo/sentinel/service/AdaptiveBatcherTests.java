@@ -16,6 +16,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * AdaptiveBatcherTests: The "Safety Inspection" for our Elevator.
+ *
+ * In programming, a "Unit Test" is like a quality check at a factory.
+ * Before we ship the code, we run these tests to make sure the "Elevator" (Batcher)
+ * behaves correctly in different situations.
+ *
+ * If a test "Passes", it means the code is working as expected.
+ * If it "Fails", we know exactly where the bug is.
+ */
 public class AdaptiveBatcherTests {
     private static final Logger log = LoggerFactory.getLogger(AdaptiveBatcherTests.class);
     private MeterRegistry meterRegistry;
@@ -25,6 +35,11 @@ public class AdaptiveBatcherTests {
         meterRegistry = new SimpleMeterRegistry();
     }
 
+    /**
+     * Test 1: Successful Batching.
+     * Checks if the elevator correctly waits for multiple people and takes them all at once.
+     * We expect 3 requests to result in only 1 "Backend Call" (callCount = 1).
+     */
     @Test
     void testSuccessfulBatching() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
@@ -53,10 +68,15 @@ public class AdaptiveBatcherTests {
         assertThat(callCount.get()).isEqualTo(1);
     }
 
+    /**
+     * Test 2: Timeout.
+     * What if only one person arrives? We don't want them to wait forever.
+     * The elevator should eventually go up (after the 5ms window) even if it's not full.
+     */
     @Test
     void testBatcherTimeout() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
-        
+
         // Submit only 1 request (won't hit maxBatchSize=16)
         CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             return items.stream().map(i -> i.value() * 10).toList();
@@ -66,10 +86,16 @@ public class AdaptiveBatcherTests {
         assertThat(future.get(1, TimeUnit.SECONDS)).isEqualTo(50.0f);
     }
 
+    /**
+     * Test 3: Failure Handling.
+     * What if the elevator breaks down (the backend fails)?
+     * We need to make sure the "Ticket" (Future) correctly reports the error
+     * instead of just hanging forever.
+     */
     @Test
     void testBatchProcessorFailure() {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
-        
+
         CompletableFuture<Float> future = batcher.submit(5.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
             throw new RuntimeException("Backend Down");
         });
@@ -99,12 +125,12 @@ public class AdaptiveBatcherTests {
     @Test
     void testPriorityOrdering() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
-        
+
         // We will mock the timing behavior by submitting a background task, sleeping for 1ms, then a realtime task
         // Because of the maxWaitMs logic, they might get batched together, but let's see.
         // To truly test ordering, we'd need to mock the system clock, but we can rely on EDF logic:
         // A BACKGROUND task has +5000ms deadline. REALTIME has +100ms. REALTIME should be pulled first.
-        
+
         // Let's submit them fast
         CompletableFuture<Float> bg = batcher.submit(1.0f, "s1", "m1", com.velo.sentinel.model.PriorityTier.BACKGROUND, true, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
         CompletableFuture<Float> rt = batcher.submit(2.0f, "s2", "m1", com.velo.sentinel.model.PriorityTier.REALTIME, true, items -> items.stream().map(AdaptiveBatcher.BatchItem::value).toList());
@@ -112,13 +138,18 @@ public class AdaptiveBatcherTests {
         assertThat(rt.get(1, TimeUnit.SECONDS)).isEqualTo(2.0f);
         assertThat(bg.get(1, TimeUnit.SECONDS)).isEqualTo(1.0f);
     }
-    
+
+    /**
+     * Test 4: Max Capacity.
+     * If 64 people arrive and the elevator only holds 32,
+     * it should correctly split them into 2 trips (batches).
+     */
     @Test
     void testMaxBatchSizeTriggersExecution() throws Exception {
         AdaptiveBatcher batcher = new AdaptiveBatcher(meterRegistry);
         AtomicInteger batchCount = new AtomicInteger(0);
         int totalTasks = 64; // Exactly 2 batches of 32
-        
+
         List<CompletableFuture<Float>> futures = new ArrayList<>();
         for (int i = 0; i < totalTasks; i++) {
             futures.add(batcher.submit((float)i, "s", "m", com.velo.sentinel.model.PriorityTier.INTERACTIVE, true, items -> {
@@ -126,9 +157,9 @@ public class AdaptiveBatcherTests {
                 return items.stream().map(it -> it.value()).toList();
             }));
         }
-        
+
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(5, TimeUnit.SECONDS);
-        
+
         // Should have processed exactly 2 batches
         assertThat(batchCount.get()).isEqualTo(2);
     }

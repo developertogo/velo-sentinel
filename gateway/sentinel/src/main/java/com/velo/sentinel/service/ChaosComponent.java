@@ -9,7 +9,7 @@ import java.util.Random;
 
 /**
  * ChaosComponent: The Fault Injection Engine.
- * 
+ *
  * Injects randomized latency and failures to test system resilience.
  */
 @Service
@@ -31,7 +31,7 @@ public class ChaosComponent {
 
     /**
      * Potentially injects chaos before an operation.
-     * 
+     *
      * @param modelName Name of the model (for logging).
      * @throws RuntimeException If a synthetic failure is injected.
      */
@@ -58,7 +58,7 @@ public class ChaosComponent {
 
     /**
      * Checks if chaos injection is currently active.
-     * 
+     *
      * @return {@code true} if enabled, {@code false} otherwise.
      */
     public boolean isEnabled() {

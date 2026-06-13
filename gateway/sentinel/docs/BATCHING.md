@@ -11,12 +11,12 @@ graph TD
     Client[REST Client] --> Gateway[DynamoBridgeService]
     Gateway --> Batcher[AdaptiveBatcher]
     Batcher --> Queue[LinkedBlockingQueue]
-    
+
     subgraph "Virtual Thread Loop"
     Queue --> Coalesce{Batch Full or Timeout?}
     Coalesce -- Yes --> Processor[Batch Processor]
     end
-    
+
     Processor --> Backend[Dynamo Backend]
     Backend --> Results[Resolve CompletableFutures]
 ```

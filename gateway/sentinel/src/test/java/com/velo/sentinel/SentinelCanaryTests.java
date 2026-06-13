@@ -61,7 +61,7 @@ public class SentinelCanaryTests {
             String model = inv.getArgument(2);
             boolean isPrefill = inv.getArgument(4);
             java.util.function.Function<List<AdaptiveBatcher.BatchItem>, List<Float>> task = inv.getArgument(5);
-            
+
             return CompletableFuture.supplyAsync(() -> {
                 AdaptiveBatcher.BatchItem item = new AdaptiveBatcher.BatchItem(val, session, model, isPrefill);
                 return task.apply(List.of(item)).get(0);
@@ -78,7 +78,7 @@ public class SentinelCanaryTests {
         when(semanticCache.checkCache(anyString())).thenReturn(null);
 
         bridgeService = new DynamoBridgeService(
-            tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent, 
+            tritonBackend, dynamoBackend, org.mockito.Mockito.mock(com.velo.sentinel.backend.MetalBackend.class), org.mockito.Mockito.mock(com.velo.sentinel.service.SpeculativeOrchestrator.class), meterRegistry, resilienceComponent,
             adaptiveBatcher, tracer, throttler, driftMonitor, chaosComponent, mock(KVCacheRegistry.class), semanticCache, mock(PrivacyScrubberService.class), mock(AuditLoggerService.class), mock(com.velo.sentinel.backend.StandbyBackend.class)
         );
 
@@ -107,11 +107,11 @@ public class SentinelCanaryTests {
         }
 
         double actualPercentage = (double) dynamoCount / totalRequests * 100;
-        
+
         // With sessionId hashing, we expect it to be close to 20%
         // Given 1000 requests, it should be very close.
         assertThat(actualPercentage).isBetween(15.0, 25.0);
-        
+
         System.out.println("Canary Stats - Dynamo: " + dynamoCount + ", Triton: " + tritonCount + ", Actual: " + actualPercentage + "%");
     }
 
@@ -121,10 +121,10 @@ public class SentinelCanaryTests {
         when(resilienceComponent.protectedDynamoCall(anyFloat(), anyString(), anyString())).thenReturn(15.0f);
 
         String sessionId = "consistent-user";
-        
+
         // Multiple requests for the same session should hit the same backend
         float firstResult = bridgeService.infer(5.0f, sessionId, "simple");
-        
+
         for (int i = 0; i < 50; i++) {
             float result = bridgeService.infer(5.0f, sessionId, "simple");
             assertThat(result).isEqualTo(firstResult);

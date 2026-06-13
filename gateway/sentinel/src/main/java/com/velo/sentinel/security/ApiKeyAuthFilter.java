@@ -16,7 +16,7 @@ import java.util.Collections;
 
 /**
  * ApiKeyAuthFilter: Guarding the GPU Runtime.
- * 
+ *
  * Intercepts requests to validate the 'X-API-KEY' header.
  * Bridges the gap between raw HTTP requests and Spring Security context.
  */
@@ -30,7 +30,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     /**
      * Validates the API key from the request header and populates the security context.
-     * 
+     *
      * @param request The incoming HTTP request.
      * @param response The outgoing HTTP response.
      * @param filterChain The processing chain.
@@ -45,7 +45,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             // Populate Security Context for authorized request
             UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                     "api-user", null, Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")));
-            
+
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
 

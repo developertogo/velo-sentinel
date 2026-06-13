@@ -27,7 +27,7 @@ public class MockDynamoServer {
 
     /**
      * Starts the mock gRPC server.
-     * 
+     *
      * @throws IOException If the server fails to bind to the port.
      */
     @PostConstruct
@@ -64,7 +64,7 @@ public class MockDynamoServer {
             }
 
             float prediction = request.getInputValue() + 0.5f;
-            
+
             DynamoInferenceResponse response = DynamoInferenceResponse.newBuilder()
                 .setPrediction(prediction)
                 .setStatus("SUCCESS")

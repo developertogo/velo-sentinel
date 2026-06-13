@@ -10,12 +10,12 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * OpenTelemetryConfig: The Observability Backbone.
- * 
+ *
  * Initializes the OpenTelemetry SDK with autoconfiguration support.
- * 
+ *
  * LOG SUPPRESSION:
  * If no OTLP collector is found on 4317, OTel spams connection errors in background threads.
- * This configuration defaults to 'none' if no exporter is specified, 
+ * This configuration defaults to 'none' if no exporter is specified,
  * keeping your dev logs clean while allowing OTLP in production.
  */
 @Configuration
@@ -25,17 +25,17 @@ public class OpenTelemetryConfig {
 
     /**
      * Initializes the OpenTelemetry SDK.
-     * 
+     *
      * @return The configured OpenTelemetry instance.
      */
     @Bean
     public OpenTelemetry openTelemetry() {
         log.info("OTEL-INIT: Initializing OpenTelemetry SDK...");
-        
+
         // DEFAULT TO 'none' FOR CLEAN LOGS:
-        // If the user hasn't specified an exporter, we default to 'none' 
+        // If the user hasn't specified an exporter, we default to 'none'
         // to prevent background connection error spam.
-        if (System.getProperty("otel.traces.exporter") == null && 
+        if (System.getProperty("otel.traces.exporter") == null &&
             System.getenv("OTEL_TRACES_EXPORTER") == null) {
             log.info("OTEL-CONFIG: No exporter found. Defaulting to 'none' for clean logs.");
             System.setProperty("otel.traces.exporter", "none");
@@ -53,7 +53,7 @@ public class OpenTelemetryConfig {
 
     /**
      * Provides a tracer for manual instrumentation.
-     * 
+     *
      * @param openTelemetry The initialized OpenTelemetry SDK.
      * @return A named Tracer instance for the sentinel project.
      */

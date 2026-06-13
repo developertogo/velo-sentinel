@@ -20,7 +20,7 @@ public class DynamoResilienceComponent {
 
     /**
      * Initializes the resilience component with both next-gen and legacy backends.
-     * 
+     *
      * @param dynamoBackend The primary disaggregated backend.
      * @param tritonBackend The fallback legacy backend.
      */
@@ -33,7 +33,7 @@ public class DynamoResilienceComponent {
      * Executes a protected call to Dynamo for a specific model.
      * Trips the circuit breaker if failures exceed the threshold.
      * Fails open to Triton if the Dynamo path is unhealthy.
-     * 
+     *
      * @param value The input float value.
      * @param sessionId The session identifier.
      * @param modelName The target model name.
@@ -47,7 +47,7 @@ public class DynamoResilienceComponent {
     /**
      * Resilience4j Fallback Handler.
      * Invoked when the circuit is open or a call fails, ensuring graceful degradation.
-     * 
+     *
      * @param value The original input value.
      * @param sessionId The session identifier.
      * @param modelName The target model.

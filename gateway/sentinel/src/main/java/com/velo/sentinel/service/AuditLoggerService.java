@@ -8,10 +8,16 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * AuditLoggerService: Immutable Compliance Logger.
- * 
- * Streams inference metadata (excluding PII payloads) to a secure, write-only
- * log for regulatory compliance and audit trails.
+ * AuditLoggerService: The "Black Box Recorder" of the System.
+ *
+ * Just like an airplane has a "Black Box" that records flight data for safety,
+ * this service records metadata about every AI request.
+ *
+ * It's "Immutable," which means once a record is written, it can never be changed or deleted.
+ * This is crucial for "Compliance" (following laws and regulations).
+ *
+ * Note: It records *how* the system performed (latency, backend used, errors),
+ * but it does NOT record *what* the user said (to protect privacy).
  */
 @Service
 public class AuditLoggerService {
@@ -19,7 +25,7 @@ public class AuditLoggerService {
 
     /**
      * Records an inference event metadata.
-     * 
+     *
      * @param sessionId The user session identifier.
      * @param modelName The name of the model utilized.
      * @param backend The backend provider (TRITON, DYNAMO, METAL).
